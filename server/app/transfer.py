@@ -23,7 +23,18 @@ def _cache_key(track: dict[str, Any]) -> str:
     return "nt:" + matcher._norm(" ".join(track.get("artists", [])) + " " + track["name"])
 
 
-def _iter_source_tracks(tok: dict[str, Any], source: dict[str, Any]):
+def _iter_source_tracks(sess: Session, source: dict[str, Any]):
+    # Imported (userscript-scraped) libraries carry their tracks inline; otherwise
+    # stream from the Spotify Web API using the session's OAuth token.
+    if sess.imported:
+        if source["type"] == "liked":
+            yield from (sess.imported.get("liked") or {}).get("tracks", [])
+        else:
+            for pl in sess.imported.get("playlists", []):
+                if pl["id"] == source["id"]:
+                    yield from pl.get("tracks", [])
+        return
+    tok = sess.spotify
     if source["type"] == "liked":
         yield from spotify.iter_liked_tracks(tok)
     else:
@@ -34,11 +45,10 @@ def run_match(job_id: str, sess: Session) -> None:
     job = get_job(job_id)
     if not job:
         return
-    tok = sess.spotify
     yt = sess.yt_client
     try:
         for si, source in enumerate(job["sources"]):
-            for track in _iter_source_tracks(tok, source):
+            for track in _iter_source_tracks(sess, source):
                 key = _cache_key(track)
                 cached = cache_get(key)
                 if cached is None:

@@ -16,7 +16,7 @@ async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
 }
 
 export interface Status {
-  spotify: { connected: boolean; user: { id: string; name: string } | null };
+  spotify: { connected: boolean; user: { id: string; name: string } | null; source?: string; count?: number };
   ytmusic: { connected: boolean };
 }
 export interface Source { type: "playlist" | "liked"; id: string; name: string; total: number; image?: string }
@@ -40,6 +40,9 @@ export interface Job {
 export const api = {
   status: () => req<Status>("/api/status"),
   spotifyLoginUrl: () => `${BASE}/api/auth/spotify/login`,
+  userscriptUrl: () => `${BASE}/segue-spotify.user.js`,
+  importClaim: (import_id: string) => req<{ ok: boolean; count: number }>(
+    "/api/import/claim", { method: "POST", body: JSON.stringify({ import_id }) }),
   ytOAuthStart: () => req<{ user_code: string; verification_url: string; interval: number; expires_in: number }>(
     "/api/auth/ytmusic/oauth/start", { method: "POST" }),
   ytOAuthPoll: () => req<{ status: "pending" | "connected" }>("/api/auth/ytmusic/oauth/poll", { method: "POST" }),

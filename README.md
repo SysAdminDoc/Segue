@@ -1,6 +1,6 @@
 # Segue
 
-[![version](https://img.shields.io/badge/version-0.1.0-cba6f7)](https://github.com/SysAdminDoc/Segue/releases)
+[![version](https://img.shields.io/badge/version-0.2.0-cba6f7)](https://github.com/SysAdminDoc/Segue/releases)
 [![license](https://img.shields.io/badge/license-MIT-a6e3a1)](LICENSE)
 [![stack](https://img.shields.io/badge/FastAPI%20%2B%20React-89b4fa)](#stack)
 [![live](https://img.shields.io/badge/live-segue.getparkerai.com-fab387)](https://segue.getparkerai.com)
@@ -31,12 +31,30 @@ rate-limiting, and **checkpointed to disk** so it resumes if interrupted.
 
 ## How it works
 
-1. **Connect Spotify** (read-only: playlists + liked songs, OAuth PKCE).
+1. **Import Spotify** — a small **browser userscript** exports your library. Spotify's
+   Feb 2026 developer changes require **Premium** and cap Development Mode at **5
+   users**, so Segue skips the Web API entirely: the userscript piggybacks on the
+   Spotify **web player's** own auth token (which works for free accounts) to read
+   your playlists and liked songs, then hands the list to Segue. No developer app,
+   no Premium, no user cap. Your Spotify login never leaves your browser.
 2. **Connect YouTube Music** — sign in with Google (device code) or paste browser headers.
 3. **Choose** playlists / liked songs to migrate.
 4. **Match** — Segue searches YT Music and scores each result (title + artist + duration).
 5. **Review** — fix low-confidence matches, exclude junk, then commit.
 6. **Transfer** — playlists are created in your YT Music account with progress + resume.
+
+> An **advanced OAuth path** (Spotify developer app, PKCE) is still built in for
+> anyone with Premium who prefers it — but the userscript is the default and
+> needs nothing from Spotify's developer program.
+
+### The exporter userscript
+
+Install [Tampermonkey](https://www.tampermonkey.net/) or
+[Violentmonkey](https://violentmonkey.github.io/), then install the exporter from
+**https://segue.getparkerai.com/segue-spotify.user.js**. On `open.spotify.com` it
+adds an *"Export to YouTube Music"* button: pick your sources, and it scrapes them
+(paginated, rate-limit aware) and opens Segue with your library loaded. Source:
+[`web/public/segue-spotify.user.js`](web/public/segue-spotify.user.js).
 
 ## Stack
 
@@ -76,13 +94,14 @@ docker run -p 8000:8000 --env-file server/.env -v segue-data:/app/data segue
 
 ## Limits worth knowing
 
-- **Spotify keeps new apps in development mode (25 authorized users).** Segue is
-  fully functional for you and up to 25 people you allowlist; a public self-serve
-  service requires Spotify "extended quota," which is granted to organizations
-  only. This is a Spotify policy limit, not a Segue one.
-- The `ytmusicapi` path is **unofficial** (web-client emulation). It's how the
-  whole ecosystem does YT Music writes at scale; it can break if YouTube changes
-  its internal API.
+- **The userscript path sidesteps Spotify's developer limits entirely** (Premium
+  requirement, 5-user Development Mode cap) because it uses your own web-player
+  session, not the developer Web API. The only "limit" is Spotify's normal
+  per-session rate window, which the script handles with backoff.
+- Both the Spotify web-player scrape and the `ytmusicapi` write path are
+  **unofficial** (web-client emulation). This is how the whole ecosystem operates;
+  either can break if Spotify or YouTube changes its internal API.
+- No YouTube Data API is used, so there is **no daily transfer quota**.
 
 ## License
 

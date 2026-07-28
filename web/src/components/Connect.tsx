@@ -36,18 +36,40 @@ export default function Connect({ status, refresh }: { status: Status; refresh: 
     finally { setBusy(false); }
   }
 
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
   return (
     <>
       <div className="card">
         <div className="row-between">
           <div>
-            <h2>1 · Connect Spotify</h2>
-            <p className="hint">Read-only access to your playlists and liked songs.</p>
+            <h2>1 · Import your Spotify library</h2>
+            <p className="hint">No Spotify account setup, no Premium — a small browser add-on exports your library.</p>
           </div>
           {status.spotify.connected
-            ? <span className="pill ok">✓ {status.spotify.user?.name || "Connected"}</span>
-            : <a className="btn spotify" href={api.spotifyLoginUrl()}>Connect Spotify</a>}
+            ? <span className="pill ok">✓ {status.spotify.count?.toLocaleString()} songs imported</span>
+            : null}
         </div>
+
+        {!status.spotify.connected && (
+          <ol className="steps-list">
+            <li>Install a userscript manager (<a href="https://www.tampermonkey.net/" target="_blank" rel="noreferrer">Tampermonkey</a> or <a href="https://violentmonkey.github.io/" target="_blank" rel="noreferrer">Violentmonkey</a>) if you don't have one.</li>
+            <li>Install the <a className="link-strong" href={api.userscriptUrl()}>Segue Spotify exporter</a> (click → your userscript manager opens → Install).</li>
+            <li>Open <a href="https://open.spotify.com" target="_blank" rel="noreferrer">open.spotify.com</a> (log in — free is fine), click the green <b>“Export to YouTube Music”</b> button, pick your playlists, and hit Export. This tab opens automatically with your library loaded.</li>
+          </ol>
+        )}
+
+        {!status.spotify.connected && (
+          <p className="muted" style={{ marginTop: 8 }}>
+            Prefer the old way?{" "}
+            <a onClick={() => setShowAdvanced(s => !s)} style={{ cursor: "pointer" }}>Use a Spotify developer app</a>
+            {showAdvanced && (
+              <span> — needs Premium + a Client ID (Spotify capped this to 5 users in Feb 2026):{" "}
+                <a className="btn spotify sm" href={api.spotifyLoginUrl()}>Connect via OAuth</a>
+              </span>
+            )}
+          </p>
+        )}
       </div>
 
       <div className="card">

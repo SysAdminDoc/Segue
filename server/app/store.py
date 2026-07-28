@@ -19,9 +19,14 @@ from .config import settings
 class Session:
     sid: str
     spotify: dict[str, Any] | None = None      # tokens + expiry + code_verifier/state
+    imported: dict[str, Any] | None = None     # library scraped by the browser userscript
     yt_client: Any | None = None               # live ytmusicapi.YTMusic instance
     yt_oauth_pending: dict[str, Any] | None = None  # device-flow handshake state
     yt_connected: bool = False
+
+    @property
+    def has_library(self) -> bool:
+        return bool(self.imported) or bool(self.spotify and self.spotify.get("access_token"))
 
 
 _sessions: dict[str, Session] = {}
@@ -70,6 +75,26 @@ def cache_put(key: str, value: dict[str, Any]) -> None:
             _cache_path.write_text(json.dumps(_match_cache), "utf-8")
         except OSError:
             pass
+
+
+# --------------------------------------------------------------------------- #
+# Imports — a library scraped by the browser userscript, POSTed here before the
+# user's Segue session is known. Claimed into a session by import_id, then dropped.
+# --------------------------------------------------------------------------- #
+_imports: dict[str, Any] = {}
+_imports_lock = threading.Lock()
+
+
+def put_import(payload: dict[str, Any]) -> str:
+    import_id = uuid.uuid4().hex
+    with _imports_lock:
+        _imports[import_id] = payload
+    return import_id
+
+
+def take_import(import_id: str) -> dict[str, Any] | None:
+    with _imports_lock:
+        return _imports.pop(import_id, None)
 
 
 # --------------------------------------------------------------------------- #

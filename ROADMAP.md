@@ -12,5 +12,7 @@ Open work only. Done items live in CHANGELOG.md.
 - [ ] 🔧 Redis-backed sessions/jobs to run more than one worker.
 - [ ] 🤖 Dedup against an existing YT Music playlist (skip tracks already present).
 
-## Blocked / policy
-- [ ] ⛔ Public self-serve scale — requires Spotify extended quota (organization + ~250k MAU bar). Ships as a ≤25-user allowlisted tool until then.
+## Watch
+- [ ] 🤖 Userscript resilience — the web-player token capture and REST endpoints are unofficial; add a fallback to the pathfinder GraphQL endpoints if `/v1/me/tracks` starts 403-ing.
+- [ ] 🤖 Bookmarklet variant of the exporter for users who won't install a userscript manager.
+- [ ] 🤖 Host the userscript with a stable versioned URL + auto-update channel.

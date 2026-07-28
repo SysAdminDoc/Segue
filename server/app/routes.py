@@ -5,12 +5,15 @@ import secrets
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from itsdangerous import BadSignature, URLSafeSerializer
 
 from . import spotify, transfer, ytmusic
 from .config import settings
-from .store import Session, get_job, get_session, save_job
+from .store import Session, get_job, get_session, put_import, save_job, take_import
+
+# Origin the Spotify exporter userscript runs on (for CORS on the import endpoint).
+IMPORT_ORIGIN = "https://open.spotify.com"
 
 router = APIRouter(prefix="/api")
 _serializer = URLSafeSerializer(settings.secret_key, salt="segue-sid")
@@ -40,15 +43,60 @@ def health() -> dict[str, Any]:
     return {"status": "ok", "version": __version__}
 
 
+def _library_count(imported: dict[str, Any]) -> int:
+    n = len((imported.get("liked") or {}).get("tracks", []))
+    return n + sum(len(p.get("tracks", [])) for p in imported.get("playlists", []))
+
+
 @router.get("/status")
 def status(sess: Session = Depends(session_dep)) -> dict[str, Any]:
-    sp = None
-    if sess.spotify and sess.spotify.get("access_token"):
-        sp = sess.spotify.get("user")
+    user, source, count = None, None, 0
+    if sess.imported:
+        source, count = "import", _library_count(sess.imported)
+    elif sess.spotify and sess.spotify.get("access_token"):
+        source, user = "oauth", sess.spotify.get("user")
     return {
-        "spotify": {"connected": sp is not None, "user": sp},
+        "spotify": {"connected": sess.has_library, "user": user, "source": source, "count": count},
         "ytmusic": {"connected": sess.yt_connected},
     }
+
+
+# --------------------------------------------------------------------------- #
+# Browser userscript import (no Spotify developer app / Premium needed)
+# --------------------------------------------------------------------------- #
+@router.options("/import/spotify")
+def import_preflight() -> Response:
+    return Response(status_code=204, headers={
+        "Access-Control-Allow-Origin": IMPORT_ORIGIN,
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "content-type",
+        "Access-Control-Max-Age": "86400",
+    })
+
+
+@router.post("/import/spotify")
+def import_spotify(payload: dict[str, Any] = Body(...)) -> JSONResponse:
+    """Receive a library scraped by the userscript. No session/cookie required —
+    returns an import_id the SPA then claims into the visitor's session."""
+    liked = payload.get("liked")
+    playlists = payload.get("playlists", [])
+    if not liked and not playlists:
+        raise HTTPException(400, "Empty library payload")
+    import_id = put_import({"liked": liked, "playlists": playlists})
+    return JSONResponse(
+        {"import_id": import_id, "count": _library_count({"liked": liked or {}, "playlists": playlists})},
+        headers={"Access-Control-Allow-Origin": IMPORT_ORIGIN},
+    )
+
+
+@router.post("/import/claim")
+def import_claim(import_id: str = Body(..., embed=True), sess: Session = Depends(session_dep)) -> dict[str, Any]:
+    payload = take_import(import_id)
+    if payload is None:
+        raise HTTPException(404, "Import not found or already claimed")
+    sess.imported = payload
+    sess.spotify = None
+    return {"ok": True, "count": _library_count(payload)}
 
 
 # --------------------------------------------------------------------------- #
@@ -127,15 +175,22 @@ def yt_headers(
 # --------------------------------------------------------------------------- #
 # Library + transfer
 # --------------------------------------------------------------------------- #
-def _require_spotify(sess: Session) -> dict[str, Any]:
-    if not sess.spotify or not sess.spotify.get("access_token"):
-        raise HTTPException(401, "Spotify not connected")
-    return sess.spotify
+def _require_library(sess: Session) -> None:
+    if not sess.has_library:
+        raise HTTPException(401, "No Spotify library connected")
 
 
 @router.get("/playlists")
 def playlists(sess: Session = Depends(session_dep)) -> dict[str, Any]:
-    tok = _require_spotify(sess)
+    _require_library(sess)
+    if sess.imported:
+        liked_src = sess.imported.get("liked") or {}
+        liked = {"type": "liked", "id": "liked", "name": liked_src.get("name", "Liked Songs"),
+                 "total": len(liked_src.get("tracks", []))}
+        pls = [{"type": "playlist", "id": p["id"], "name": p["name"], "total": len(p.get("tracks", []))}
+               for p in sess.imported.get("playlists", [])]
+        return {"liked": liked, "playlists": pls}
+    tok = sess.spotify
     pls = spotify.list_playlists(tok)
     liked = {"type": "liked", "id": "liked", "name": "Liked Songs", "total": spotify.liked_count(tok)}
     return {"liked": liked, "playlists": pls}
@@ -145,7 +200,7 @@ def playlists(sess: Session = Depends(session_dep)) -> dict[str, Any]:
 def start_transfer(
     sources: list[dict[str, Any]] = Body(..., embed=True), sess: Session = Depends(session_dep)
 ) -> dict[str, Any]:
-    _require_spotify(sess)
+    _require_library(sess)
     if not sess.yt_connected or sess.yt_client is None:
         raise HTTPException(401, "YouTube Music not connected")
     if not sources:

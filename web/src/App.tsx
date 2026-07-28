@@ -13,7 +13,17 @@ export default function App() {
   const [job, setJob] = useState<Job | null>(null);
   const jobPoll = useRef<number | null>(null);
 
+  const [claiming, setClaiming] = useState(false);
   const refreshStatus = useCallback(() => { api.status().then(setStatus).catch(() => {}); }, []);
+
+  // The userscript opens us at /#import=<id>; claim that library into this session.
+  useEffect(() => {
+    const m = window.location.hash.match(/import=([a-f0-9]+)/);
+    if (!m) return;
+    setClaiming(true);
+    window.history.replaceState(null, "", window.location.pathname);
+    api.importClaim(m[1]).then(() => refreshStatus()).finally(() => setClaiming(false));
+  }, [refreshStatus]);
   const refreshJob = useCallback(() => {
     if (jobId) api.job(jobId).then(setJob).catch(() => {});
   }, [jobId]);
@@ -52,6 +62,7 @@ export default function App() {
         <div className={`step ${stage === "job" && (job?.phase === "writing" || job?.phase === "done") ? "active" : ""}`}>Transfer</div>
       </div>
 
+      {claiming && <div className="card">Importing your Spotify library…</div>}
       {stage === "connect" && status && <Connect status={status} refresh={refreshStatus} />}
       {stage === "pick" && <PickSources onStart={setJobId} />}
       {stage === "job" && job && (
