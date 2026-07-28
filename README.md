@@ -1,6 +1,6 @@
 # Segue
 
-[![version](https://img.shields.io/badge/version-0.3.0-cba6f7)](https://github.com/SysAdminDoc/Segue/releases)
+[![version](https://img.shields.io/badge/version-0.4.0-cba6f7)](https://github.com/SysAdminDoc/Segue/releases)
 [![license](https://img.shields.io/badge/license-MIT-a6e3a1)](LICENSE)
 [![stack](https://img.shields.io/badge/FastAPI%20%2B%20React-89b4fa)](#stack)
 [![live](https://img.shields.io/badge/live-segue.getparkerai.com-fab387)](https://segue.getparkerai.com)

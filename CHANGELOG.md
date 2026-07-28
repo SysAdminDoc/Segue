@@ -3,6 +3,26 @@
 All notable changes to Segue are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versioning is `vMAJOR.MINOR.PATCH`.
 
+## [0.4.0] — 2026-07-28
+
+Userscript actually captures the token now + live progress log.
+
+### Fixed
+- **The v0.3.0 page-context hook was blocked by Spotify's CSP** (injecting an
+  inline `<script>` is refused), so the token was never captured. v0.4.0 patches
+  the page's real `fetch`/`XHR` directly through **`unsafeWindow`** — no inline
+  script, so CSP can't block it — and captures into a closure (no event bridge).
+  Confirmed via live browser testing that Spotify's CSP blocks inline scripts and
+  that the auth requests run on the main thread where the hook can see them.
+
+### Added
+- **Live verbose log** in the export dialog: timestamped lines for session
+  capture, playlist discovery, and per-source song counts as they stream in, so a
+  large library never looks frozen. Plus clearer status text and a persistent
+  diagnostic line (token / client-token / liked-query).
+- The dialog now opens immediately and reports progress while it waits for the
+  session token and loads playlists (previously it could sit on a dead button).
+
 ## [0.3.0] — 2026-07-28
 
 Fixed the userscript exporter — it now actually captures the token.
