@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Segue — Spotify → YouTube Music exporter
 // @namespace    https://segue.getparkerai.com
-// @version      0.4.0
+// @version      0.5.0
 // @description  Export your Spotify playlists & liked songs (no developer app, no Premium) and send them to Segue to migrate to YouTube Music.
 // @author       SysAdminDoc
 // @match        https://open.spotify.com/*
@@ -24,6 +24,8 @@
  *  - v0.4 patches the page's real fetch/XHR directly through `unsafeWindow`
  *    (no inline script — CSP can't block it) and captures the bearer +
  *    client-token the web player already mints (so there's no TOTP to solve).
+ *  - v0.5 paces requests (one at a time, ~450ms gap) to stay under Spotify's
+ *    ~180 req/min rolling-window limit, with hard backoff on any 429.
  * Plus a live verbose log so a big library never looks "stuck".
  * Your Spotify login never leaves the browser — only track metadata is sent.
  */
@@ -89,22 +91,60 @@
   // Networking (all through GM_xmlhttpRequest — no CORS)
   // ---------------------------------------------------------------------------
   const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  // --- Rate-limit pacing ------------------------------------------------------
+  // Spotify's Web API allows only ~180 req/min over a rolling 30s window, and a
+  // web-player token SHARES that budget with the open.spotify.com tab's own
+  // background traffic. So we pace well under it — one request at a time with a
+  // fixed gap between each — and essentially never hit a 429. If we do, we back
+  // off hard and permanently slow down for the rest of the run, because a single
+  // mishandled burst of 429s can escalate Spotify into a multi-hour lockout.
+  let paceMs = 450;              // ≈2.2 req/s ≈ 130/min — comfortably under the ceiling
+  const PACE_MAX = 1500;
+  let lastReqAt = 0;
+  async function pace() {
+    const gap = paceMs - (Date.now() - lastReqAt);
+    if (gap > 0) await sleep(gap);
+    lastReqAt = Date.now();
+  }
+  function retryAfter(r) {
+    const m = (r && r.responseHeaders || "").match(/retry-after:\s*(\d+)/i);
+    return m ? parseInt(m[1], 10) : null;
+  }
+
   function gm(method, url, headers, data) {
     return new Promise((resolve, reject) => {
       GM_xmlhttpRequest({ method, url, headers, data, timeout: 30000,
         onload: r => resolve(r), onerror: () => reject(new Error("network error")), ontimeout: () => reject(new Error("timeout")) });
     });
   }
-  async function rest(path) {
-    for (let attempt = 0; attempt < 8; attempt++) {
-      const r = await gm("GET", `${API}${path}`, { authorization: `Bearer ${bearer}` });
-      if (r.status === 429) { const ra = parseInt((r.responseHeaders.match(/retry-after:\s*(\d+)/i) || [])[1] || "2", 10); log(`  …rate-limited, waiting ${ra + 1}s`); await sleep((ra + 1) * 1000); continue; }
-      if (r.status === 401) throw new Error("token-expired");
-      if (r.status === 403) throw new Error("rest-forbidden");
-      if (r.status < 200 || r.status >= 300) throw new Error(`Spotify ${r.status}`);
-      return JSON.parse(r.responseText);
+
+  // Paced GET with resilient 429 handling (works for both REST and pathfinder POSTs
+  // via `gmPaced`). Honours Retry-After when present; otherwise exponential backoff.
+  async function gmPaced(method, url, headers, data) {
+    let hit = 0;
+    for (;;) {
+      await pace();
+      const r = await gm(method, url, headers, data);
+      if (r.status !== 429) return r;
+      hit++;
+      if (hit > 6) throw new Error("Spotify kept rate-limiting us. Stopping so it doesn't trigger a long lockout — wait a few minutes and Export again.");
+      const ra = retryAfter(r);
+      let waitS = ra != null ? ra : Math.min(300, 30 * Math.pow(2, hit - 1));
+      if (waitS > 150) throw new Error(`Spotify put a ${waitS}s rate-limit penalty on this session. Stopping — wait a few minutes and try again.`);
+      waitS = Math.ceil(waitS * (1 + Math.random() * 0.2));      // jitter
+      paceMs = Math.min(PACE_MAX, paceMs + 200);                 // permanently slow down
+      log(`  ⏳ rate limited — waiting ${waitS}s, then continuing slower (${paceMs}ms/request)…`, "bad");
+      await sleep(waitS * 1000);
     }
-    throw new Error("rate-limited");
+  }
+
+  async function rest(path) {
+    const r = await gmPaced("GET", `${API}${path}`, { authorization: `Bearer ${bearer}` });
+    if (r.status === 401) throw new Error("token-expired");
+    if (r.status === 403) throw new Error("rest-forbidden");
+    if (r.status < 200 || r.status >= 300) throw new Error(`Spotify ${r.status}`);
+    return JSON.parse(r.responseText);
   }
   function normRest(t) {
     if (!t || t.is_local || !t.id) return null;
@@ -153,7 +193,7 @@
     const out = [], seen = new Set(); let offset = 0; const limit = 100;
     for (let g = 0; g < 500; g++) {
       base.variables = Object.assign({}, base.variables, { offset, limit });
-      const r = await gm("POST", pfTemplate.url, { authorization: `Bearer ${bearer}`, "client-token": clientToken || "", "content-type": "application/json", "app-platform": "WebPlayer" }, JSON.stringify(base));
+      const r = await gmPaced("POST", pfTemplate.url, { authorization: `Bearer ${bearer}`, "client-token": clientToken || "", "content-type": "application/json", "app-platform": "WebPlayer" }, JSON.stringify(base));
       if (r.status === 401) throw new Error("token-expired");
       if (r.status !== 200) throw new Error(`pathfinder ${r.status}`);
       const before = out.length; collectPF(JSON.parse(r.responseText), out, seen);
@@ -305,6 +345,7 @@
     if (!rows.length) { setStatus("Select at least one source.", true); return; }
     go.disabled = true;
     log(`Starting export of ${rows.length} source(s)…`);
+    log(`Pacing ~${(1000 / paceMs).toFixed(1)} requests/sec to stay under Spotify's rate limit — big libraries take a little longer, but won't get throttled.`);
     try {
       const payload = { liked: null, playlists: [] };
       for (const r of rows) {

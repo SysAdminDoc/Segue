@@ -3,6 +3,24 @@
 All notable changes to Segue are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versioning is `vMAJOR.MINOR.PATCH`.
 
+## [0.5.0] — 2026-07-28
+
+Rate-limit-proof pacing for the exporter.
+
+### Fixed
+- The exporter fired paginated requests back-to-back with **no delay**, so large
+  libraries tripped Spotify's ~180 req/min rolling-window limit and the playlist
+  scan failed partway. Also fixed a latent crash reading the `Retry-After` header
+  when it was absent.
+### Changed
+- All Spotify reads now go through a **paced queue**: one request at a time with a
+  ~450ms gap (≈2.2 req/s ≈130/min), comfortably under the ceiling. On a 429 it
+  backs off (honouring `Retry-After` when readable, else exponential 30→300s with
+  jitter), **permanently slows the pace for the rest of the run**, and aborts
+  cleanly rather than hammering into a multi-hour lockout if Spotify escalates.
+  The log shows the pacing rate and any wait, so the slower speed reads as
+  intentional. Applies to the pathfinder fallback too.
+
 ## [0.4.0] — 2026-07-28
 
 Userscript actually captures the token now + live progress log.
