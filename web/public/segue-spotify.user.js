@@ -1,52 +1,48 @@
 // ==UserScript==
 // @name         Segue — Spotify → YouTube Music exporter
 // @namespace    https://segue.getparkerai.com
-// @version      0.5.0
+// @version      0.6.0
 // @description  Export your Spotify playlists & liked songs (no developer app, no Premium) and send them to Segue to migrate to YouTube Music.
 // @author       SysAdminDoc
 // @match        https://open.spotify.com/*
 // @icon         https://open.spotify.com/favicon.ico
-// @grant        unsafeWindow
-// @grant        GM_xmlhttpRequest
-// @connect      api.spotify.com
-// @connect      api-partner.spotify.com
-// @connect      segue.getparkerai.com
+// @inject-into  page
+// @grant        none
 // @run-at       document-start
 // @downloadURL  https://segue.getparkerai.com/segue-spotify.user.js
 // @updateURL    https://segue.getparkerai.com/segue-spotify.user.js
 // ==/UserScript==
 
 /*
- * WHY v0.4.0:
- *  - v0.2 failed: the fetch hook ran in the userscript sandbox, not the page.
- *  - v0.3 failed: injecting the hook via an inline <script> is blocked by
- *    Spotify's Content-Security-Policy, so it never installed.
- *  - v0.4 patches the page's real fetch/XHR directly through `unsafeWindow`
- *    (no inline script — CSP can't block it) and captures the bearer +
- *    client-token the web player already mints (so there's no TOTP to solve).
- *  - v0.5 paces requests (one at a time, ~450ms gap) to stay under Spotify's
- *    ~180 req/min rolling-window limit, with hard backoff on any 429.
- * Plus a live verbose log so a big library never looks "stuck".
- * Your Spotify login never leaves the browser — only track metadata is sent.
+ * WHY v0.6.0 — the capture saga, resolved:
+ *  - v0.2 hooked fetch in the userscript SANDBOX → never touched the page's fetch.
+ *  - v0.3 injected an inline <script> → blocked by Spotify's CSP.
+ *  - v0.4/0.5 patched via `unsafeWindow` → in some Tampermonkey setups unsafeWindow
+ *    is NOT the real page window, so the hook silently missed everything.
+ *  - v0.6 runs the whole script IN THE PAGE CONTEXT (`@grant none` / `@inject-into
+ *    page`). Now `window.fetch` literally IS the player's fetch, so patching it
+ *    always works, and Tampermonkey's page injection bypasses CSP. All network
+ *    calls use plain fetch — verified that api.spotify.com AND Segue both allow
+ *    CORS from open.spotify.com, so no GM_xmlhttpRequest is needed.
+ * We reuse the token the web player already minted (no TOTP). Paced under
+ * Spotify's ~180 req/min limit. Your login never leaves the browser.
  */
 (function () {
   "use strict";
   const SEGUE = "https://segue.getparkerai.com";
   const API = "https://api.spotify.com/v1";
-  const W = (typeof unsafeWindow !== "undefined") ? unsafeWindow : window;
 
-  let bearer = null, clientToken = null, pfTemplate = null;
-  let logEl = null;
+  let bearer = null, clientToken = null, pfTemplate = null, logEl = null;
 
   // ---------------------------------------------------------------------------
-  // Capture the web-player's token by patching the PAGE's fetch/XHR via unsafeWindow
+  // Capture the web-player's token by patching the page's own fetch/XHR
   // ---------------------------------------------------------------------------
   function installHooks() {
-    if (W.__segueHooked) return;
-    W.__segueHooked = true;
+    if (window.__segueHooked) return;
+    window.__segueHooked = true;
 
-    const oFetch = W.fetch;
-    W.fetch = function (input, init) {
+    const oFetch = window.fetch;
+    window.fetch = function (input, init) {
       try {
         const req = new Request(input, init);
         const url = req.url || "";
@@ -60,10 +56,8 @@
       return oFetch.apply(this, arguments);
     };
 
-    const XHR = W.XMLHttpRequest;
-    const oOpen = XHR.prototype.open;
-    const oSet = XHR.prototype.setRequestHeader;
-    const oSend = XHR.prototype.send;
+    const XHR = window.XMLHttpRequest;
+    const oOpen = XHR.prototype.open, oSet = XHR.prototype.setRequestHeader, oSend = XHR.prototype.send;
     XHR.prototype.open = function (m, u) { this.__segUrl = u; return oOpen.apply(this, arguments); };
     XHR.prototype.setRequestHeader = function (k, v) {
       try {
@@ -80,80 +74,56 @@
       return oSend.apply(this, arguments);
     };
   }
-
   let credLogged = false;
-  function onCred() {
-    updateBadge();
-    if (bearer && !credLogged) { credLogged = true; log("✓ Spotify session token captured"); }
-  }
+  function onCred() { updateBadge(); if (bearer && !credLogged) { credLogged = true; log("✓ Spotify session token captured"); } }
 
   // ---------------------------------------------------------------------------
-  // Networking (all through GM_xmlhttpRequest — no CORS)
+  // Networking — plain fetch, paced under Spotify's rate limit
   // ---------------------------------------------------------------------------
   const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-  // --- Rate-limit pacing ------------------------------------------------------
-  // Spotify's Web API allows only ~180 req/min over a rolling 30s window, and a
-  // web-player token SHARES that budget with the open.spotify.com tab's own
-  // background traffic. So we pace well under it — one request at a time with a
-  // fixed gap between each — and essentially never hit a 429. If we do, we back
-  // off hard and permanently slow down for the rest of the run, because a single
-  // mishandled burst of 429s can escalate Spotify into a multi-hour lockout.
-  let paceMs = 450;              // ≈2.2 req/s ≈ 130/min — comfortably under the ceiling
+  let paceMs = 450;                 // ≈2.2 req/s ≈130/min — under the ~180/min ceiling
   const PACE_MAX = 1500;
   let lastReqAt = 0;
-  async function pace() {
-    const gap = paceMs - (Date.now() - lastReqAt);
-    if (gap > 0) await sleep(gap);
-    lastReqAt = Date.now();
-  }
-  function retryAfter(r) {
-    const m = (r && r.responseHeaders || "").match(/retry-after:\s*(\d+)/i);
-    return m ? parseInt(m[1], 10) : null;
-  }
+  async function pace() { const gap = paceMs - (Date.now() - lastReqAt); if (gap > 0) await sleep(gap); lastReqAt = Date.now(); }
 
-  function gm(method, url, headers, data) {
-    return new Promise((resolve, reject) => {
-      GM_xmlhttpRequest({ method, url, headers, data, timeout: 30000,
-        onload: r => resolve(r), onerror: () => reject(new Error("network error")), ontimeout: () => reject(new Error("timeout")) });
-    });
-  }
-
-  // Paced GET with resilient 429 handling (works for both REST and pathfinder POSTs
-  // via `gmPaced`). Honours Retry-After when present; otherwise exponential backoff.
-  async function gmPaced(method, url, headers, data) {
+  // Serialised, paced request with resilient 429 handling. (A browser usually
+  // can't read Retry-After cross-origin, so we lean on proactive pacing +
+  // exponential backoff, and bail before Spotify escalates to a long lockout.)
+  async function httpPaced(method, url, headers, body) {
     let hit = 0;
     for (;;) {
       await pace();
-      const r = await gm(method, url, headers, data);
-      if (r.status !== 429) return r;
+      let res;
+      try { res = await fetch(url, { method, headers, body: body || undefined }); }
+      catch (e) { throw new Error("network error"); }
+      if (res.status !== 429) return res;
       hit++;
       if (hit > 6) throw new Error("Spotify kept rate-limiting us. Stopping so it doesn't trigger a long lockout — wait a few minutes and Export again.");
-      const ra = retryAfter(r);
-      let waitS = ra != null ? ra : Math.min(300, 30 * Math.pow(2, hit - 1));
+      const raHdr = parseInt(res.headers.get("retry-after") || "", 10);
+      let waitS = Number.isFinite(raHdr) ? raHdr : Math.min(300, 30 * Math.pow(2, hit - 1));
       if (waitS > 150) throw new Error(`Spotify put a ${waitS}s rate-limit penalty on this session. Stopping — wait a few minutes and try again.`);
-      waitS = Math.ceil(waitS * (1 + Math.random() * 0.2));      // jitter
-      paceMs = Math.min(PACE_MAX, paceMs + 200);                 // permanently slow down
+      waitS = Math.ceil(waitS * (1 + Math.random() * 0.2));
+      paceMs = Math.min(PACE_MAX, paceMs + 200);
       log(`  ⏳ rate limited — waiting ${waitS}s, then continuing slower (${paceMs}ms/request)…`, "bad");
       await sleep(waitS * 1000);
     }
   }
 
   async function rest(path) {
-    const r = await gmPaced("GET", `${API}${path}`, { authorization: `Bearer ${bearer}` });
-    if (r.status === 401) throw new Error("token-expired");
-    if (r.status === 403) throw new Error("rest-forbidden");
-    if (r.status < 200 || r.status >= 300) throw new Error(`Spotify ${r.status}`);
-    return JSON.parse(r.responseText);
+    const res = await httpPaced("GET", `${API}${path}`, { authorization: `Bearer ${bearer}` });
+    if (res.status === 401) throw new Error("token-expired");
+    if (res.status === 403) throw new Error("rest-forbidden");
+    if (!res.ok) throw new Error(`Spotify ${res.status}`);
+    return res.json();
   }
   function normRest(t) {
     if (!t || t.is_local || !t.id) return null;
     return { id: t.id, name: t.name || "", artists: (t.artists || []).map(a => a.name), album: (t.album && t.album.name) || "", duration_ms: t.duration_ms || 0, isrc: (t.external_ids && t.external_ids.isrc) || null };
   }
   async function restPageAll(firstPath, label) {
-    const out = []; let path = firstPath, page = 0;
+    const out = []; let path = firstPath;
     while (path) {
-      const j = await rest(path); page++;
+      const j = await rest(path);
       for (const item of j.items || []) { const nt = normRest(item.track || item); if (nt) out.push(nt); }
       log(`  ${label}: ${out.length}${j.total ? " / " + j.total : ""} songs`);
       path = j.next ? j.next.replace(API, "") : null;
@@ -180,10 +150,7 @@
     if (isTrack) {
       const d = node.data && node.data.uri ? node.data : node;
       const id = uri.split(":").pop();
-      if (!seen.has(id)) {
-        seen.add(id);
-        out.push({ id, name: d.name || "", artists: (((d.artists && d.artists.items) || []).map(a => (a.profile && a.profile.name) || a.name).filter(Boolean)), album: (d.albumOfTrack && d.albumOfTrack.name) || (d.album && d.album.name) || "", duration_ms: (d.trackDuration && d.trackDuration.totalMilliseconds) || d.duration_ms || 0, isrc: null });
-      }
+      if (!seen.has(id)) { seen.add(id); out.push({ id, name: d.name || "", artists: (((d.artists && d.artists.items) || []).map(a => (a.profile && a.profile.name) || a.name).filter(Boolean)), album: (d.albumOfTrack && d.albumOfTrack.name) || (d.album && d.album.name) || "", duration_ms: (d.trackDuration && d.trackDuration.totalMilliseconds) || d.duration_ms || 0, isrc: null }); }
     }
     for (const k in node) if (!(k === "data" && isTrack)) collectPF(node[k], out, seen);
   }
@@ -193,10 +160,10 @@
     const out = [], seen = new Set(); let offset = 0; const limit = 100;
     for (let g = 0; g < 500; g++) {
       base.variables = Object.assign({}, base.variables, { offset, limit });
-      const r = await gmPaced("POST", pfTemplate.url, { authorization: `Bearer ${bearer}`, "client-token": clientToken || "", "content-type": "application/json", "app-platform": "WebPlayer" }, JSON.stringify(base));
-      if (r.status === 401) throw new Error("token-expired");
-      if (r.status !== 200) throw new Error(`pathfinder ${r.status}`);
-      const before = out.length; collectPF(JSON.parse(r.responseText), out, seen);
+      const res = await httpPaced("POST", pfTemplate.url, { authorization: `Bearer ${bearer}`, "client-token": clientToken || "", "content-type": "application/json", "app-platform": "WebPlayer" }, JSON.stringify(base));
+      if (res.status === 401) throw new Error("token-expired");
+      if (!res.ok) throw new Error(`pathfinder ${res.status}`);
+      const before = out.length; collectPF(await res.json(), out, seen);
       log(`  ${label} (player API): ${out.length} songs`);
       if (out.length === before) break;
       offset += limit;
@@ -205,18 +172,13 @@
   }
   async function likedTracks() {
     try { return await restPageAll("/me/tracks?limit=50", "Liked Songs"); }
-    catch (e) {
-      if (e.message === "token-expired") throw e;
-      log(`  REST refused (${e.message}) → trying the player's own API…`);
-      return await pathfinderLiked("Liked Songs");
-    }
+    catch (e) { if (e.message === "token-expired") throw e; log(`  REST refused (${e.message}) → trying the player's own API…`); return await pathfinderLiked("Liked Songs"); }
   }
 
-  function send(payload) {
-    return new Promise((resolve, reject) => {
-      GM_xmlhttpRequest({ method: "POST", url: `${SEGUE}/api/import/spotify`, headers: { "Content-Type": "application/json" }, data: JSON.stringify(payload),
-        onload: r => { try { resolve(JSON.parse(r.responseText)); } catch (e) { reject(new Error("Bad response from Segue")); } }, onerror: () => reject(new Error("Could not reach Segue")) });
-    });
+  async function send(payload) {
+    const res = await fetch(`${SEGUE}/api/import/spotify`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    if (!res.ok) throw new Error("Segue error " + res.status);
+    return res.json();
   }
 
   // ---------------------------------------------------------------------------
@@ -244,24 +206,17 @@
     #segue-diag{margin-top:10px;font:11px/1.5 ui-monospace,monospace;color:#6c7086}
     #segue-diag b{color:#a6e3a1}.segue-diag-bad{color:#f38ba8 !important}
   `;
-  function styleOnce() { if (!document.getElementById("segue-style")) { const s = document.createElement("style"); s.id = "segue-style"; s.textContent = css; document.head.appendChild(s); } }
-
+  function styleOnce() { if (!document.getElementById("segue-style")) { const s = document.createElement("style"); s.id = "segue-style"; s.textContent = css; (document.head || document.documentElement).appendChild(s); } }
   function pad(n) { return n < 10 ? "0" + n : "" + n; }
   function log(msg, cls) {
     if (!logEl) return;
-    const d = new Date();
-    const line = document.createElement("div");
+    const d = new Date(), line = document.createElement("div");
     if (cls) line.className = cls;
     line.innerHTML = `<span class="t">[${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}]</span> `;
     line.appendChild(document.createTextNode(msg));
-    logEl.appendChild(line);
-    logEl.scrollTop = logEl.scrollHeight;
+    logEl.appendChild(line); logEl.scrollTop = logEl.scrollHeight;
   }
-
-  function diagHtml() {
-    const ok = v => v ? "<b>yes</b>" : "<span class='segue-diag-bad'>no</span>";
-    return `token: ${ok(bearer)} · client-token: ${ok(clientToken)} · liked-query: ${ok(pfTemplate)}`;
-  }
+  function diagHtml() { const ok = v => v ? "<b>yes</b>" : "<span class='segue-diag-bad'>no</span>"; return `token: ${ok(bearer)} · client-token: ${ok(clientToken)} · liked-query: ${ok(pfTemplate)}`; }
   function updateBadge() {
     const fab = document.getElementById("segue-fab");
     if (fab) { const s = fab.querySelector("small"); if (s) s.textContent = bearer ? "✓ ready" : "reading session…"; }
@@ -304,19 +259,13 @@
     if (!bearer) {
       log("Waiting for the web player to hand over a session token…");
       const got = await waitForToken(15000);
-      if (!got) {
-        setStatus("Couldn't read your session", true);
-        log("✗ No token yet. Make sure you're logged in (free is fine), then play or click any playlist and reopen this.", "bad");
-        return;
-      }
+      if (!got) { setStatus("Couldn't read your session", true); log("✗ No token yet. Make sure you're logged in (free is fine), then play or click any playlist and reopen this.", "bad"); return; }
     } else { log("✓ Spotify session token ready"); }
 
-    setStatus("Loading your playlists…");
-    log("Fetching your playlists…");
+    setStatus("Loading your playlists…"); log("Fetching your playlists…");
     try {
       const pls = await restPlaylists();
-      const list = modal.querySelector("#segue-list");
-      list.innerHTML = "";
+      const list = modal.querySelector("#segue-list"); list.innerHTML = "";
       list.appendChild(row("liked", "❤ Liked Songs", "", true));
       pls.forEach(p => list.appendChild(row("pl:" + p.id, p.name, p.total, false, p)));
       log(`✓ Loaded ${pls.length} playlists`, "ok");
@@ -324,10 +273,8 @@
       modal.querySelector(".segue-go").disabled = false;
     } catch (e) {
       log(`Couldn't list playlists (${e.message}). Liked Songs may still work.`, "bad");
-      const list = modal.querySelector("#segue-list");
-      list.innerHTML = ""; list.appendChild(row("liked", "❤ Liked Songs", "", true));
-      setStatus("Pick what to migrate, then Export →");
-      modal.querySelector(".segue-go").disabled = false;
+      const list = modal.querySelector("#segue-list"); list.innerHTML = ""; list.appendChild(row("liked", "❤ Liked Songs", "", true));
+      setStatus("Pick what to migrate, then Export →"); modal.querySelector(".segue-go").disabled = false;
     }
   }
 
@@ -366,12 +313,11 @@
       setStatus(`Sending ${count} songs to Segue…`); log(`Sending ${count} songs to Segue…`);
       const res = await send(payload);
       setStatus(`Done — ${res.count} songs. Opening Segue…`); log(`✓ Done. Opening Segue in a new tab.`, "ok");
-      W.open(`${SEGUE}/#import=${res.import_id}`, "_blank");
+      window.open(`${SEGUE}/#import=${res.import_id}`, "_blank");
       setTimeout(() => { if (modal) { modal.remove(); modal = null; logEl = null; } }, 2500);
     } catch (e) {
       const msg = e.message === "token-expired" ? "Session expired — refresh Spotify and retry." : e.message;
-      setStatus("Error: " + msg, true); log("✗ " + msg, "bad");
-      go.disabled = false;
+      setStatus("Error: " + msg, true); log("✗ " + msg, "bad"); go.disabled = false;
     }
   }
 

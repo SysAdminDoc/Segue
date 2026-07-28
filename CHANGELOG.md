@@ -3,6 +3,25 @@
 All notable changes to Segue are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versioning is `vMAJOR.MINOR.PATCH`.
 
+## [0.6.0] — 2026-07-28
+
+Real fix for token capture: run in the page context.
+
+### Fixed
+- **The exporter wasn't capturing the token at all** in some Tampermonkey setups:
+  v0.4/0.5 patched `unsafeWindow.fetch`, but `unsafeWindow` isn't always the real
+  page window, so the hook silently missed the player's requests (diagnostic
+  showed `token: no`). v0.6.0 runs the whole script **in the page context**
+  (`@grant none` / `@inject-into page`), so `window.fetch` genuinely is the
+  player's fetch — patching it always works, and the manager's page injection
+  bypasses Spotify's CSP.
+### Changed
+- Dropped `GM_xmlhttpRequest`/`unsafeWindow`; all calls use plain `fetch`.
+  Verified live that both `api.spotify.com` and Segue's import endpoint allow
+  CORS from `open.spotify.com`, so no privileged APIs are needed. Pacing and the
+  429 backoff from 0.5.0 are retained (browser can't read `Retry-After`, so it
+  relies on proactive pacing + exponential backoff).
+
 ## [0.5.0] — 2026-07-28
 
 Rate-limit-proof pacing for the exporter.
