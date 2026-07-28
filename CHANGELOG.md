@@ -3,6 +3,27 @@
 All notable changes to Segue are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versioning is `vMAJOR.MINOR.PATCH`.
 
+## [0.3.0] — 2026-07-28
+
+Fixed the userscript exporter — it now actually captures the token.
+
+### Fixed
+- **Token capture was broken two ways** (v0.2.0 never worked): (1) the `fetch`
+  hook ran in the userscript's isolated sandbox, so it never patched the page's
+  real `fetch`; (2) even in-page it failed to read the auth header off Spotify's
+  `Request` objects. Now the hook is **injected into the page's main world** via a
+  `<script>` element and relays the captured token back over a `CustomEvent`, and
+  headers are read by normalizing every call through `new Request(input, init)`.
+  Verified against the live player: bearer + `client-token` both captured.
+### Added
+- **Pathfinder GraphQL fallback**: if the REST library endpoints refuse the web
+  token, Segue replays the player's own captured pathfinder request (v2) with
+  pagination — its rotating query-hash is captured live, so it self-heals.
+- **Diagnostic line** in the export dialog (token / client-token / pathfinder
+  status) so failures are legible.
+- All network calls now go through `GM_xmlhttpRequest` (no CORS friction);
+  `@connect` for api.spotify.com and api-partner.spotify.com.
+
 ## [0.2.0] — 2026-07-28
 
 Browser-userscript import — no Spotify developer app or Premium required.
