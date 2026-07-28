@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Node / Vite
+node_modules/
+web/dist/
+web/.vite/
+
+# Runtime data (sessions, oauth tokens, job checkpoints, match cache)
+server/data/
+data/
+
+# Env / secrets
+.env
+.env.local
+*.oauth.json
+
+# Agent working notes (never commit)
+CLAUDE.md
+CODEX_CHANGELOG.md
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# TS build info
+web/tsconfig.tsbuildinfo

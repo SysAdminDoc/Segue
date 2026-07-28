@@ -1,0 +1,9 @@
+**/node_modules
+**/dist
+**/__pycache__
+**/.venv
+server/data
+web/.vite
+.git
+CLAUDE.md
+*.md
