@@ -3,6 +3,14 @@
 All notable changes to Segue are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versioning is `vMAJOR.MINOR.PATCH`.
 
+## [Unreleased]
+
+### Fixed
+- YouTube Music connections now survive server/container restarts. Segue keeps
+  the signed browser session ID, reopens the newest saved OAuth or browser-header
+  credential file, and falls back to the other auth method if the newest file is
+  stale, allowing checkpointed write jobs to resume without reconnecting.
+
 ## [0.6.0] — 2026-07-28
 
 Real fix for token capture: run in the page context.

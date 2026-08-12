@@ -29,6 +29,10 @@ def session_dep(request: Request, response: Response) -> Session:
         except BadSignature:
             sid = None
     sess = get_session(sid)
+    if not sess.yt_rehydrate_attempted:
+        sess.yt_rehydrate_attempted = True
+        sess.yt_client = ytmusic.from_saved(sess.sid)
+        sess.yt_connected = sess.yt_client is not None
     response.set_cookie(
         COOKIE, _serializer.dumps(sess.sid),
         httponly=True, samesite="lax", max_age=60 * 60 * 24 * 7,
@@ -156,6 +160,7 @@ def yt_oauth_poll(sess: Session = Depends(session_dep)) -> dict[str, Any]:
         return {"status": "pending"}
     sess.yt_client = client
     sess.yt_connected = True
+    sess.yt_rehydrate_attempted = True
     sess.yt_oauth_pending = None
     return {"status": "connected"}
 
@@ -167,6 +172,7 @@ def yt_headers(
     try:
         sess.yt_client = ytmusic.from_headers(raw_headers, sess.sid)
         sess.yt_connected = True
+        sess.yt_rehydrate_attempted = True
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(400, f"Could not parse headers: {exc}")
     return {"status": "connected"}
@@ -220,7 +226,9 @@ def _owned_job(job_id: str, sess: Session) -> dict[str, Any]:
 
 @router.get("/transfer/{job_id}")
 def transfer_status(job_id: str, sess: Session = Depends(session_dep)) -> dict[str, Any]:
-    return _owned_job(job_id, sess)
+    job = _owned_job(job_id, sess)
+    transfer.resume_if_needed(job_id, sess)
+    return job
 
 
 @router.post("/transfer/{job_id}/rematch")

@@ -17,6 +17,29 @@ from .config import settings
 from .store import Session, cache_get, cache_put, get_job, save_job
 
 
+_active_workers: set[tuple[str, str]] = set()
+_active_workers_lock = threading.Lock()
+
+
+def _start_once(job_id: str, phase: str, target, sess: Session) -> bool:
+    """Start at most one in-process worker for a job phase."""
+    key = (job_id, phase)
+    with _active_workers_lock:
+        if key in _active_workers:
+            return False
+        _active_workers.add(key)
+
+    def run() -> None:
+        try:
+            target(job_id, sess)
+        finally:
+            with _active_workers_lock:
+                _active_workers.discard(key)
+
+    threading.Thread(target=run, daemon=True).start()
+    return True
+
+
 def _cache_key(track: dict[str, Any]) -> str:
     if track.get("isrc"):
         return f"isrc:{track['isrc']}"
@@ -79,7 +102,7 @@ def run_match(job_id: str, sess: Session) -> None:
 
 
 def start_match(job_id: str, sess: Session) -> None:
-    threading.Thread(target=run_match, args=(job_id, sess), daemon=True).start()
+    _start_once(job_id, "matching", run_match, sess)
 
 
 def run_commit(job_id: str, sess: Session) -> None:
@@ -135,4 +158,12 @@ def run_commit(job_id: str, sess: Session) -> None:
 
 
 def start_commit(job_id: str, sess: Session) -> None:
-    threading.Thread(target=run_commit, args=(job_id, sess), daemon=True).start()
+    _start_once(job_id, "writing", run_commit, sess)
+
+
+def resume_if_needed(job_id: str, sess: Session) -> bool:
+    """Resume a checkpointed write whose original process/thread disappeared."""
+    job = get_job(job_id)
+    if not job or job.get("phase") != "writing" or sess.yt_client is None:
+        return False
+    return _start_once(job_id, "writing", run_commit, sess)

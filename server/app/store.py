@@ -1,8 +1,8 @@
-"""In-process session/job stores and a disk-backed match cache.
+"""In-process session/job stores and disk-backed transfer state.
 
-v0.1.0 keeps sessions and live YTMusic clients in memory (single process). Jobs
-are additionally checkpointed to disk so a large migration survives a restart and
-resumes without re-searching. Swap the dicts for Redis when scaling past one worker.
+Sessions remain process-local, but their signed IDs are stable across restarts so
+persisted YouTube Music credentials and jobs can be reattached on the next request.
+Swap the dicts for Redis when scaling past one worker.
 """
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ class Session:
     yt_client: Any | None = None               # live ytmusicapi.YTMusic instance
     yt_oauth_pending: dict[str, Any] | None = None  # device-flow handshake state
     yt_connected: bool = False
+    yt_rehydrate_attempted: bool = False
 
     @property
     def has_library(self) -> bool:
@@ -37,7 +38,10 @@ def get_session(sid: str | None) -> Session:
     with _sessions_lock:
         if sid and sid in _sessions:
             return _sessions[sid]
-        new_sid = uuid.uuid4().hex
+        # ``sid`` has already been verified by the signed-cookie serializer. Keep
+        # it after a process restart so disk-backed credentials/jobs remain owned
+        # by the same browser session.
+        new_sid = sid or uuid.uuid4().hex
         sess = Session(sid=new_sid)
         _sessions[new_sid] = sess
         return sess
