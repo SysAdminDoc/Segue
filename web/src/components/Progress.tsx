@@ -15,12 +15,15 @@ export default function Progress({ job }: { job: Job }) {
 
   if (job.phase === "writing") {
     const target = job.matches.filter(r => r.included).length;
-    const pct = target ? Math.round((job.added_count / target) * 100) : 0;
+    const handled = job.added_count + (job.skipped_count || 0);
+    const pct = target ? Math.min(100, Math.round((handled / target) * 100)) : 0;
     return (
       <div className="card">
         <h2>Adding to YouTube Music…</h2>
         <div className="bar"><span style={{ width: `${pct}%` }} /></div>
-        <p className="muted">{job.added_count.toLocaleString()} / {target.toLocaleString()} added</p>
+        <p className="muted">
+          {job.added_count.toLocaleString()} added · {(job.skipped_count || 0).toLocaleString()} already present / duplicate
+        </p>
       </div>
     );
   }
@@ -29,10 +32,15 @@ export default function Progress({ job }: { job: Job }) {
     return (
       <div className="card">
         <h2>✓ Migration complete</h2>
-        <p className="hint">{job.added_count.toLocaleString()} songs added across {job.playlists_created.length} playlist(s).</p>
+        <p className="hint">
+          {job.added_count.toLocaleString()} songs added, {(job.skipped_count || 0).toLocaleString()} already present or duplicate,
+          across {job.playlists_created.length} playlist(s).
+        </p>
         <div className="done-links">
           {job.playlists_created.map(p => (
-            <a key={p.playlistId} href={p.url} target="_blank" rel="noreferrer">▶ {p.name} — open in YouTube Music</a>
+            <a key={`${p.playlistId}:${p.name}`} href={p.url} target="_blank" rel="noreferrer">
+              ▶ {p.name}{p.reused ? " (existing)" : ""} — open in YouTube Music
+            </a>
           ))}
         </div>
       </div>

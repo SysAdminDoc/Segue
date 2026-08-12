@@ -17,6 +17,10 @@ All notable changes to Segue are documented here. Format loosely follows
   playlist assembled from their albums and singles because Spotify removed the
   top-tracks endpoint in February 2026. The OAuth path now requests
   `user-follow-read` and uses Spotify's renamed playlist `items` endpoint.
+- Writes now reuse an owned YouTube Music playlist whose normalized title matches
+  the source. Segue loads all existing video IDs, collapses duplicates within the
+  reviewed source, appends only missing tracks, and reports added versus skipped
+  counts without duplicating work after a checkpoint retry.
 
 ### Fixed
 - YouTube Music connections now survive server/container restarts. Segue keeps

@@ -134,33 +134,63 @@ def run_commit(job_id: str, sess: Session) -> None:
                 by_source.setdefault(row["source_index"], []).append(row["selected_videoId"])
 
         created = {p["source_index"]: p for p in job["playlists_created"]}
-        for si, video_ids in by_source.items():
+        missing_destinations = any(si not in created for si in by_source)
+        library = ytmusic.library_playlists(yt) if missing_destinations else []
+        destinations = {
+            " ".join(p.get("title", "").split()).casefold(): p
+            for p in library
+            if p.get("playlistId") and p.get("title")
+        }
+        for si, raw_video_ids in by_source.items():
             source = job["sources"][si]
             name = "Liked Songs (Spotify)" if source["type"] == "liked" else source["name"]
+            unique_video_ids = list(dict.fromkeys(raw_video_ids))
 
-            if si in created:
+            new_entry = si not in created
+            if not new_entry:
                 pid = created[si]["playlistId"]
-                start = created[si].get("added", 0)
             else:
-                pid = ytmusic.create_playlist(yt, name)
+                existing = destinations.get(" ".join(name.split()).casefold())
+                reused = existing is not None
+                pid = existing["playlistId"] if existing else ytmusic.create_playlist(yt, name)
                 entry = {
                     "source_index": si,
                     "name": name,
                     "playlistId": pid,
                     "url": ytmusic.PLAYLIST_URL.format(pid),
                     "added": 0,
+                    "skipped": 0,
+                    "reused": reused,
                 }
                 job["playlists_created"].append(entry)
                 created[si] = entry
-                start = 0
+                destinations[" ".join(name.split()).casefold()] = {
+                    "playlistId": pid, "title": name,
+                }
+                save_job(job)
+
+            entry = created[si]
+            existing_ids = (
+                set()
+                if new_entry and not entry["reused"]
+                else ytmusic.playlist_video_ids(yt, pid)
+            )
+            pending = [video_id for video_id in unique_video_ids if video_id not in existing_ids]
+            if not entry.get("dedup_initialized"):
+                duplicates_in_source = len(raw_video_ids) - len(unique_video_ids)
+                known_added = entry.get("added", 0)
+                preexisting = max(0, len(unique_video_ids) - len(pending) - known_added)
+                entry["skipped"] = duplicates_in_source + preexisting
+                entry["dedup_initialized"] = True
+                job["skipped_count"] = sum(p.get("skipped", 0) for p in job["playlists_created"])
                 save_job(job)
 
             batch = settings.add_batch_size
-            for i in range(start, len(video_ids), batch):
-                chunk = video_ids[i:i + batch]
+            for i in range(0, len(pending), batch):
+                chunk = pending[i:i + batch]
                 ytmusic.add_items(yt, pid, chunk)
-                created[si]["added"] = i + len(chunk)
-                job["added_count"] += len(chunk)
+                entry["added"] = entry.get("added", 0) + len(chunk)
+                job["added_count"] = sum(p.get("added", 0) for p in job["playlists_created"])
                 save_job(job)
                 time.sleep(settings.add_sleep_seconds)
 

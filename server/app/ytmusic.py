@@ -144,5 +144,18 @@ def create_playlist(yt: YTMusic, title: str, description: str = "") -> str:
     return pid
 
 
+def library_playlists(yt: YTMusic) -> list[dict[str, Any]]:
+    return yt.get_library_playlists(limit=None)
+
+
+def playlist_video_ids(yt: YTMusic, playlist_id: str) -> set[str]:
+    playlist = yt.get_playlist(playlist_id, limit=None)
+    return {
+        track["videoId"]
+        for track in playlist.get("tracks", [])
+        if track and track.get("videoId")
+    }
+
+
 def add_items(yt: YTMusic, playlist_id: str, video_ids: list[str]) -> dict[str, Any]:
-    return yt.add_playlist_items(playlist_id, video_ids, duplicates=True)
+    return yt.add_playlist_items(playlist_id, video_ids, duplicates=False)

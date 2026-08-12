@@ -44,7 +44,9 @@ rate-limiting, and **checkpointed to disk** so it resumes if interrupted.
    their albums and singles.
 4. **Match** — Segue searches YT Music and scores each result (title + artist + duration).
 5. **Review** — fix low-confidence matches, exclude junk, then commit.
-6. **Transfer** — playlists are created in your YT Music account with progress + resume.
+6. **Transfer** — a same-name playlist in your YT Music library is reused and
+   existing tracks are skipped; otherwise Segue creates it. Progress is
+   checkpointed for safe resume.
 
 > An **advanced OAuth path** (Spotify developer app, PKCE) is still built in for
 > anyone with Premium who prefers it — but the userscript is the default and

@@ -124,6 +124,7 @@ def create_job(sid: str, sources: list[dict[str, Any]]) -> dict[str, Any]:
         "matched_count": 0,
         "total": sum(s.get("total", 0) for s in sources),
         "added_count": 0,
+        "skipped_count": 0,
         "playlists_created": [],       # [{name, playlistId, url}]
         "error": None,
         "log": [],

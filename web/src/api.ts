@@ -36,7 +36,8 @@ export interface Row {
 export interface Job {
   id: string; phase: string; sources: Source[]; matches: Row[];
   matched_count: number; total: number; added_count: number;
-  playlists_created: { name: string; playlistId: string; url: string; added: number }[];
+  skipped_count?: number;
+  playlists_created: { name: string; playlistId: string; url: string; added: number; skipped?: number; reused?: boolean }[];
   error: string | null;
 }
 
