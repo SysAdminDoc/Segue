@@ -116,8 +116,55 @@ def list_playlists(tok: dict[str, Any]) -> list[dict[str, Any]]:
                 "type": "playlist",
                 "id": pl["id"],
                 "name": pl["name"],
-                "total": (pl.get("tracks") or {}).get("total", 0),
+                "total": (pl.get("items") or pl.get("tracks") or {}).get("total", 0),
                 "image": (pl.get("images") or [{}])[0].get("url"),
+            })
+        url = page.get("next")
+        params = None
+    return out
+
+
+def list_saved_albums(tok: dict[str, Any]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    url: str | None = f"{API}/me/albums"
+    params: dict | None = {"limit": 50}
+    while url:
+        page = _get(tok, url, params)
+        for item in page.get("items", []):
+            album = (item or {}).get("album") or {}
+            if not album.get("id"):
+                continue
+            artists = [a.get("name", "") for a in album.get("artists", []) if a]
+            label = f"{album.get('name', 'Untitled')} — {', '.join(artists)}" if artists else album.get("name", "Untitled")
+            out.append({
+                "type": "album",
+                "id": album["id"],
+                "name": label,
+                "total": album.get("total_tracks") or (album.get("tracks") or {}).get("total", 0),
+                "image": (album.get("images") or [{}])[0].get("url"),
+            })
+        url = page.get("next")
+        params = None
+    return out
+
+
+def list_followed_artists(tok: dict[str, Any]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    url: str | None = f"{API}/me/following"
+    params: dict | None = {"type": "artist", "limit": 50}
+    while url:
+        wrapper = _get(tok, url, params)
+        page = wrapper.get("artists") or {}
+        for artist in page.get("items", []):
+            if not artist or not artist.get("id"):
+                continue
+            out.append({
+                "type": "artist",
+                "id": artist["id"],
+                "name": f"{artist.get('name', 'Unknown artist')} — catalog",
+                "total": 0,
+                "total_known": False,
+                "image": (artist.get("images") or [{}])[0].get("url"),
             })
         url = page.get("next")
         params = None
@@ -130,7 +177,7 @@ def liked_count(tok: dict[str, Any]) -> int:
 
 
 def _norm_track(item: dict[str, Any]) -> dict[str, Any] | None:
-    t = item.get("track") or item
+    t = item.get("item") or item.get("track") or item
     if not t or t.get("is_local") or not t.get("id"):
         return None
     return {
@@ -144,9 +191,8 @@ def _norm_track(item: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def iter_playlist_tracks(tok: dict[str, Any], playlist_id: str):
-    fields = "next,items(track(id,name,duration_ms,artists(name),album(name),external_ids(isrc),is_local))"
-    url: str | None = f"{API}/playlists/{playlist_id}/tracks"
-    params: dict | None = {"limit": 100, "fields": fields}
+    url: str | None = f"{API}/playlists/{playlist_id}/items"
+    params: dict | None = {"limit": 50}
     while url:
         page = _get(tok, url, params)
         for item in page.get("items", []):
@@ -155,6 +201,47 @@ def iter_playlist_tracks(tok: dict[str, Any], playlist_id: str):
                 yield nt
         url = page.get("next")
         params = None
+
+
+def iter_album_tracks(tok: dict[str, Any], album_id: str):
+    url: str | None = f"{API}/albums/{album_id}/tracks"
+    params: dict | None = {"limit": 50}
+    while url:
+        page = _get(tok, url, params)
+        for item in page.get("items", []):
+            nt = _norm_track(item)
+            if nt:
+                yield nt
+        url = page.get("next")
+        params = None
+
+
+def iter_artist_tracks(tok: dict[str, Any], artist_id: str):
+    """Yield a followed artist's unique album/single tracks.
+
+    Spotify removed the top-tracks endpoint in February 2026. Walking the
+    artist's album and single releases is the supported catalog path.
+    """
+    album_ids: list[str] = []
+    seen_albums: set[str] = set()
+    url: str | None = f"{API}/artists/{artist_id}/albums"
+    params: dict | None = {"include_groups": "album,single", "limit": 50}
+    while url:
+        page = _get(tok, url, params)
+        for album in page.get("items", []):
+            album_id = (album or {}).get("id")
+            if album_id and album_id not in seen_albums:
+                seen_albums.add(album_id)
+                album_ids.append(album_id)
+        url = page.get("next")
+        params = None
+
+    seen_tracks: set[str] = set()
+    for album_id in album_ids:
+        for track in iter_album_tracks(tok, album_id):
+            if track["id"] not in seen_tracks:
+                seen_tracks.add(track["id"])
+                yield track
 
 
 def iter_liked_tracks(tok: dict[str, Any]):

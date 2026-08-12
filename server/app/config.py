@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     # --- Spotify (read side) ---
     spotify_client_id: str = ""
     spotify_client_secret: str = ""  # optional; PKCE works without it
-    spotify_scopes: str = "playlist-read-private playlist-read-collaborative user-library-read"
+    spotify_scopes: str = "playlist-read-private playlist-read-collaborative user-library-read user-follow-read"
 
     # --- YouTube Music (write side) ---
     # Google Cloud OAuth client of type "TVs and Limited Input devices" with the

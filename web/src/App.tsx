@@ -62,7 +62,7 @@ export default function App() {
   return (
     <div className="wrap">
       <div className="brand"><span className="dot" /><h1>Segue</h1></div>
-      <p className="tagline">Move your Spotify playlists and liked songs to YouTube Music — with a review step so nothing lands on the wrong track.</p>
+      <p className="tagline">Move your Spotify playlists, liked songs, saved albums, and followed artists to YouTube Music — with a review step so nothing lands on the wrong track.</p>
 
       <div className="steps">
         <div className={`step ${stage === "connect" ? "active" : "done"}`}>Connect</div>

@@ -55,7 +55,7 @@ export default function Connect({ status, refresh }: { status: Status; refresh: 
           <ol className="steps-list">
             <li>Install a userscript manager (<a href="https://www.tampermonkey.net/" target="_blank" rel="noreferrer">Tampermonkey</a> or <a href="https://violentmonkey.github.io/" target="_blank" rel="noreferrer">Violentmonkey</a>) if you don't have one.</li>
             <li>Install the <a className="link-strong" href={api.userscriptUrl()}>Segue Spotify exporter</a> (click → your userscript manager opens → Install).</li>
-            <li>Open <a href="https://open.spotify.com" target="_blank" rel="noreferrer">open.spotify.com</a> (log in — free is fine), click the green <b>“Export to YouTube Music”</b> button, pick your playlists, and hit Export. This tab opens automatically with your library loaded.</li>
+            <li>Open <a href="https://open.spotify.com" target="_blank" rel="noreferrer">open.spotify.com</a> (log in — free is fine), click the green <b>“Export to YouTube Music”</b> button, pick playlists, albums, or artists, and hit Export. This tab opens automatically with your library loaded.</li>
           </ol>
         )}
 

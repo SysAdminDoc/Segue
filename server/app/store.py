@@ -119,7 +119,7 @@ def create_job(sid: str, sources: list[dict[str, Any]]) -> dict[str, Any]:
         "id": job_id,
         "sid": sid,
         "phase": "matching",          # matching -> review -> writing -> done -> error
-        "sources": sources,            # [{type:'playlist'|'liked', id, name, total}]
+        "sources": sources,            # [{type:'playlist'|'liked'|'album'|'artist', id, name, total}]
         "matches": [],                 # per-track match rows (built during matching)
         "matched_count": 0,
         "total": sum(s.get("total", 0) for s in sources),

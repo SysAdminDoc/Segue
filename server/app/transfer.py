@@ -53,15 +53,22 @@ def _iter_source_tracks(sess: Session, source: dict[str, Any]):
         if source["type"] == "liked":
             yield from (sess.imported.get("liked") or {}).get("tracks", [])
         else:
-            for pl in sess.imported.get("playlists", []):
-                if pl["id"] == source["id"]:
-                    yield from pl.get("tracks", [])
+            collection = {"playlist": "playlists", "album": "albums", "artist": "artists"}.get(source["type"])
+            for item in sess.imported.get(collection or "", []):
+                if item["id"] == source["id"]:
+                    yield from item.get("tracks", [])
         return
     tok = sess.spotify
     if source["type"] == "liked":
         yield from spotify.iter_liked_tracks(tok)
-    else:
+    elif source["type"] == "playlist":
         yield from spotify.iter_playlist_tracks(tok, source["id"])
+    elif source["type"] == "album":
+        yield from spotify.iter_album_tracks(tok, source["id"])
+    elif source["type"] == "artist":
+        yield from spotify.iter_artist_tracks(tok, source["id"])
+    else:
+        raise ValueError(f"Unknown source type: {source['type']}")
 
 
 def run_match(job_id: str, sess: Session) -> None:
@@ -71,7 +78,14 @@ def run_match(job_id: str, sess: Session) -> None:
     yt = sess.yt_client
     try:
         for si, source in enumerate(job["sources"]):
-            for track in _iter_source_tracks(sess, source):
+            tracks = _iter_source_tracks(sess, source)
+            if not source.get("total_known", True):
+                tracks = list(tracks)
+                source["total"] = len(tracks)
+                source["total_known"] = True
+                job["total"] = sum(s.get("total", 0) for s in job["sources"])
+                save_job(job)
+            for track in tracks:
                 key = _cache_key(track)
                 cached = cache_get(key)
                 if cached is None:

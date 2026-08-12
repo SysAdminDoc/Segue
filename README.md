@@ -5,8 +5,9 @@
 [![stack](https://img.shields.io/badge/FastAPI%20%2B%20React-89b4fa)](#stack)
 [![live](https://img.shields.io/badge/live-segue.getparkerai.com-fab387)](https://segue.getparkerai.com)
 
-Migrate your **Spotify** playlists and liked songs to **YouTube Music** — with a
-match-review step so nothing lands on the wrong track.
+Migrate your **Spotify** playlists, liked songs, saved albums, and followed
+artists to **YouTube Music** — with a match-review step so nothing lands on the
+wrong track.
 
 > **Live demo:** https://segue.getparkerai.com
 
@@ -38,7 +39,9 @@ rate-limiting, and **checkpointed to disk** so it resumes if interrupted.
    your playlists and liked songs, then hands the list to Segue. No developer app,
    no Premium, no user cap. Your Spotify login never leaves your browser.
 2. **Connect YouTube Music** — sign in with Google (device code) or paste browser headers.
-3. **Choose** playlists / liked songs to migrate.
+3. **Choose** playlists, liked songs, saved albums, or followed artists to
+   migrate. A followed artist becomes a deduplicated playlist of tracks from
+   their albums and singles.
 4. **Match** — Segue searches YT Music and scores each result (title + artist + duration).
 5. **Review** — fix low-confidence matches, exclude junk, then commit.
 6. **Transfer** — playlists are created in your YT Music account with progress + resume.
@@ -52,8 +55,9 @@ rate-limiting, and **checkpointed to disk** so it resumes if interrupted.
 Install [Tampermonkey](https://www.tampermonkey.net/) or
 [Violentmonkey](https://violentmonkey.github.io/), then install the exporter from
 **https://segue.getparkerai.com/segue-spotify.user.js**. On `open.spotify.com` it
-adds an *"Export to YouTube Music"* button: pick your sources, and it scrapes them
-(paginated, rate-limit aware) and opens Segue with your library loaded. Source:
+adds an *"Export to YouTube Music"* button: pick playlists, albums, or followed
+artists, and it scrapes them (paginated, rate-limit aware) and opens Segue with
+your library loaded. Source:
 [`web/public/segue-spotify.user.js`](web/public/segue-spotify.user.js).
 
 ## Stack

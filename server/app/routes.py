@@ -53,7 +53,9 @@ def health() -> dict[str, Any]:
 
 def _library_count(imported: dict[str, Any]) -> int:
     n = len((imported.get("liked") or {}).get("tracks", []))
-    return n + sum(len(p.get("tracks", [])) for p in imported.get("playlists", []))
+    for collection in ("playlists", "albums", "artists"):
+        n += sum(len(source.get("tracks", [])) for source in imported.get(collection, []))
+    return n
 
 
 @router.get("/status")
@@ -88,11 +90,14 @@ def import_spotify(payload: dict[str, Any] = Body(...)) -> JSONResponse:
     returns an import_id the SPA then claims into the visitor's session."""
     liked = payload.get("liked")
     playlists = payload.get("playlists", [])
-    if not liked and not playlists:
+    albums = payload.get("albums", [])
+    artists = payload.get("artists", [])
+    if not liked and not playlists and not albums and not artists:
         raise HTTPException(400, "Empty library payload")
-    import_id = put_import({"liked": liked, "playlists": playlists})
+    library = {"liked": liked, "playlists": playlists, "albums": albums, "artists": artists}
+    import_id = put_import(library)
     return JSONResponse(
-        {"import_id": import_id, "count": _library_count({"liked": liked or {}, "playlists": playlists})},
+        {"import_id": import_id, "count": _library_count(library)},
         headers={"Access-Control-Allow-Origin": IMPORT_ORIGIN},
     )
 
@@ -199,11 +204,17 @@ def playlists(sess: Session = Depends(session_dep)) -> dict[str, Any]:
                  "total": len(liked_src.get("tracks", []))}
         pls = [{"type": "playlist", "id": p["id"], "name": p["name"], "total": len(p.get("tracks", []))}
                for p in sess.imported.get("playlists", [])]
-        return {"liked": liked, "playlists": pls}
+        albums = [{"type": "album", "id": a["id"], "name": a["name"], "total": len(a.get("tracks", []))}
+                  for a in sess.imported.get("albums", [])]
+        artists = [{"type": "artist", "id": a["id"], "name": a["name"], "total": len(a.get("tracks", []))}
+                   for a in sess.imported.get("artists", [])]
+        return {"liked": liked, "playlists": pls, "albums": albums, "artists": artists}
     tok = sess.spotify
     pls = spotify.list_playlists(tok)
+    albums = spotify.list_saved_albums(tok)
+    artists = spotify.list_followed_artists(tok)
     liked = {"type": "liked", "id": "liked", "name": "Liked Songs", "total": spotify.liked_count(tok)}
-    return {"liked": liked, "playlists": pls}
+    return {"liked": liked, "playlists": pls, "albums": albums, "artists": artists}
 
 
 @router.post("/transfer")

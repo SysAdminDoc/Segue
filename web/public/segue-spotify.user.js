@@ -2,7 +2,7 @@
 // @name         Segue — Spotify → YouTube Music exporter
 // @namespace    https://segue.getparkerai.com
 // @version      0.6.0
-// @description  Export your Spotify playlists & liked songs (no developer app, no Premium) and send them to Segue to migrate to YouTube Music.
+// @description  Export Spotify playlists, liked songs, saved albums, and followed artists to Segue (no developer app or Premium).
 // @author       SysAdminDoc
 // @match        https://open.spotify.com/*
 // @icon         https://open.spotify.com/favicon.ico
@@ -116,15 +116,15 @@
     if (!res.ok) throw new Error(`Spotify ${res.status}`);
     return res.json();
   }
-  function normRest(t) {
+  function normRest(t, albumName) {
     if (!t || t.is_local || !t.id) return null;
-    return { id: t.id, name: t.name || "", artists: (t.artists || []).map(a => a.name), album: (t.album && t.album.name) || "", duration_ms: t.duration_ms || 0, isrc: (t.external_ids && t.external_ids.isrc) || null };
+    return { id: t.id, name: t.name || "", artists: (t.artists || []).map(a => a.name), album: (t.album && t.album.name) || albumName || "", duration_ms: t.duration_ms || 0, isrc: (t.external_ids && t.external_ids.isrc) || null };
   }
-  async function restPageAll(firstPath, label) {
+  async function restPageAll(firstPath, label, albumName) {
     const out = []; let path = firstPath;
     while (path) {
       const j = await rest(path);
-      for (const item of j.items || []) { const nt = normRest(item.track || item); if (nt) out.push(nt); }
+      for (const item of j.items || []) { const nt = normRest(item.item || item.track || item, albumName); if (nt) out.push(nt); }
       log(`  ${label}: ${out.length}${j.total ? " / " + j.total : ""} songs`);
       path = j.next ? j.next.replace(API, "") : null;
     }
@@ -134,11 +134,59 @@
     const out = []; let path = "/me/playlists?limit=50";
     while (path) {
       const j = await rest(path);
-      for (const p of j.items || []) if (p) out.push({ id: p.id, name: p.name, total: (p.tracks || {}).total || 0 });
+      for (const p of j.items || []) if (p) out.push({ kind: "playlist", id: p.id, name: p.name, total: ((p.items || p.tracks) || {}).total || 0 });
       log(`  found ${out.length} playlists…`);
       path = j.next ? j.next.replace(API, "") : null;
     }
     return out;
+  }
+  async function restSavedAlbums() {
+    const out = []; let path = "/me/albums?limit=50";
+    while (path) {
+      const j = await rest(path);
+      for (const item of j.items || []) {
+        const album = item && item.album;
+        if (!album || !album.id) continue;
+        const artists = (album.artists || []).map(a => a.name).filter(Boolean);
+        out.push({ kind: "album", id: album.id, albumName: album.name || "Untitled", name: `${album.name || "Untitled"}${artists.length ? " — " + artists.join(", ") : ""}`, total: album.total_tracks || ((album.tracks || {}).total) || 0 });
+      }
+      log(`  found ${out.length} saved albums…`);
+      path = j.next ? j.next.replace(API, "") : null;
+    }
+    return out;
+  }
+  async function restFollowedArtists() {
+    const out = []; let path = "/me/following?type=artist&limit=50";
+    while (path) {
+      const j = await rest(path), page = j.artists || {};
+      for (const artist of page.items || []) if (artist && artist.id) out.push({ kind: "artist", id: artist.id, name: artist.name || "Unknown artist", total: "catalog" });
+      log(`  found ${out.length} followed artists…`);
+      path = page.next ? page.next.replace(API, "") : null;
+    }
+    return out;
+  }
+  async function playlistTracks(source) {
+    try { return await restPageAll(`/playlists/${source.id}/items?limit=50`, source.name); }
+    catch (e) {
+      if (e.message !== "Spotify 404") throw e;
+      return restPageAll(`/playlists/${source.id}/tracks?limit=100`, source.name);
+    }
+  }
+  async function albumTracks(source) {
+    return restPageAll(`/albums/${source.id}/tracks?limit=50`, source.name, source.albumName || source.name);
+  }
+  async function artistCatalog(source) {
+    const albums = [], seenAlbums = new Set(); let path = `/artists/${source.id}/albums?include_groups=album,single&limit=50`;
+    while (path) {
+      const page = await rest(path);
+      for (const album of page.items || []) if (album && album.id && !seenAlbums.has(album.id)) { seenAlbums.add(album.id); albums.push({ kind: "album", id: album.id, albumName: album.name || "Untitled", name: `${source.name}: ${album.name || "Untitled"}` }); }
+      path = page.next ? page.next.replace(API, "") : null;
+    }
+    const tracks = [], seenTracks = new Set();
+    for (const album of albums) {
+      for (const track of await albumTracks(album)) if (!seenTracks.has(track.id)) { seenTracks.add(track.id); tracks.push(track); }
+    }
+    return tracks;
   }
 
   // Pathfinder fallback (replays the player's own captured library query) ------
@@ -195,6 +243,7 @@
     #segue-list{max-height:34vh;overflow:auto;border:1px solid #313244;border-radius:8px;margin-bottom:12px}
     #segue-list label{display:flex;gap:10px;align-items:center;padding:8px 10px;cursor:pointer}
     #segue-list label:nth-child(odd){background:#181825}
+    #segue-list .segue-section{padding:7px 10px 4px;background:#313244;color:#a6adc8;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
     #segue-list .n{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     #segue-list .c{color:#a6adc8;font-size:12px}
     #segue-log{height:150px;overflow:auto;background:#11111b;border:1px solid #313244;border-radius:8px;padding:8px 10px;font:11.5px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;color:#a6adc8;white-space:pre-wrap;margin-bottom:12px}
@@ -262,27 +311,31 @@
       if (!got) { setStatus("Couldn't read your session", true); log("✗ No token yet. Make sure you're logged in (free is fine), then play or click any playlist and reopen this.", "bad"); return; }
     } else { log("✓ Spotify session token ready"); }
 
-    setStatus("Loading your playlists…"); log("Fetching your playlists…");
-    try {
-      const pls = await restPlaylists();
-      const list = modal.querySelector("#segue-list"); list.innerHTML = "";
-      list.appendChild(row("liked", "❤ Liked Songs", "", true));
-      pls.forEach(p => list.appendChild(row("pl:" + p.id, p.name, p.total, false, p)));
-      log(`✓ Loaded ${pls.length} playlists`, "ok");
-      setStatus("Pick what to migrate, then Export →");
-      modal.querySelector(".segue-go").disabled = false;
-    } catch (e) {
-      log(`Couldn't list playlists (${e.message}). Liked Songs may still work.`, "bad");
-      const list = modal.querySelector("#segue-list"); list.innerHTML = ""; list.appendChild(row("liked", "❤ Liked Songs", "", true));
-      setStatus("Pick what to migrate, then Export →"); modal.querySelector(".segue-go").disabled = false;
+    setStatus("Loading your Spotify library…"); log("Fetching playlists, saved albums, and followed artists…");
+    const list = modal.querySelector("#segue-list"); list.innerHTML = "";
+    list.appendChild(row("liked", "❤ Liked Songs", "", true, { kind: "liked", id: "liked", name: "Liked Songs" }));
+    const groups = [
+      ["Playlists", restPlaylists],
+      ["Saved albums", restSavedAlbums],
+      ["Followed artists", restFollowedArtists],
+    ];
+    for (const [title, load] of groups) {
+      try {
+        const sources = await load();
+        if (sources.length) { const heading = document.createElement("div"); heading.className = "segue-section"; heading.textContent = title; list.appendChild(heading); }
+        sources.forEach(source => list.appendChild(row(`${source.kind}:${source.id}`, source.name, source.total, false, source)));
+        log(`✓ Loaded ${sources.length} ${title.toLowerCase()}`, "ok");
+      } catch (e) { log(`Couldn't list ${title.toLowerCase()} (${e.message}); continuing.`, "bad"); }
     }
+    setStatus("Pick what to migrate, then Export →");
+    modal.querySelector(".segue-go").disabled = false;
   }
 
   function setStatus(msg, bad) { const s = modal && modal.querySelector("#segue-status"); if (s) { s.textContent = msg; s.style.color = bad ? "#f38ba8" : "#cdd6f4"; } }
-  function row(key, name, count, checked, pl) {
+  function row(key, name, count, checked, source) {
     const l = document.createElement("label");
     l.innerHTML = `<input type="checkbox" ${checked ? "checked" : ""}><span class="n"></span><span class="c">${count || ""}</span>`;
-    l.querySelector(".n").textContent = name; l.dataset.key = key; if (pl) l._pl = pl;
+    l.querySelector(".n").textContent = name; l.dataset.key = key; l._source = source;
     return l;
   }
 
@@ -294,21 +347,31 @@
     log(`Starting export of ${rows.length} source(s)…`);
     log(`Pacing ~${(1000 / paceMs).toFixed(1)} requests/sec to stay under Spotify's rate limit — big libraries take a little longer, but won't get throttled.`);
     try {
-      const payload = { liked: null, playlists: [] };
+      const payload = { liked: null, playlists: [], albums: [], artists: [] };
       for (const r of rows) {
-        if (r.dataset.key === "liked") {
+        const source = r._source;
+        if (source.kind === "liked") {
           setStatus("Exporting Liked Songs…"); log("Exporting Liked Songs…");
           payload.liked = { name: "Liked Songs", tracks: await likedTracks() };
           log(`✓ Liked Songs: ${payload.liked.tracks.length} songs`, "ok");
-        } else {
-          const pl = r._pl;
-          setStatus(`Exporting “${pl.name}”…`); log(`Exporting playlist “${pl.name}”…`);
-          const tracks = await restPageAll(`/playlists/${pl.id}/tracks?limit=100`, pl.name);
-          payload.playlists.push({ id: pl.id, name: pl.name, tracks });
-          log(`✓ “${pl.name}”: ${tracks.length} songs`, "ok");
+        } else if (source.kind === "playlist") {
+          setStatus(`Exporting “${source.name}”…`); log(`Exporting playlist “${source.name}”…`);
+          const tracks = await playlistTracks(source);
+          payload.playlists.push({ id: source.id, name: source.name, tracks });
+          log(`✓ “${source.name}”: ${tracks.length} songs`, "ok");
+        } else if (source.kind === "album") {
+          setStatus(`Exporting album “${source.name}”…`); log(`Exporting album “${source.name}”…`);
+          const tracks = await albumTracks(source);
+          payload.albums.push({ id: source.id, name: source.name, tracks });
+          log(`✓ “${source.name}”: ${tracks.length} songs`, "ok");
+        } else if (source.kind === "artist") {
+          setStatus(`Exporting ${source.name}'s catalog…`); log(`Exporting followed artist “${source.name}”…`);
+          const tracks = await artistCatalog(source);
+          payload.artists.push({ id: source.id, name: `${source.name} — catalog`, tracks });
+          log(`✓ “${source.name}”: ${tracks.length} unique catalog songs`, "ok");
         }
       }
-      const count = (payload.liked ? payload.liked.tracks.length : 0) + payload.playlists.reduce((n, p) => n + p.tracks.length, 0);
+      const count = (payload.liked ? payload.liked.tracks.length : 0) + [payload.playlists, payload.albums, payload.artists].flat().reduce((n, source) => n + source.tracks.length, 0);
       if (!count) { setStatus("Nothing exported — see the log.", true); go.disabled = false; return; }
       setStatus(`Sending ${count} songs to Segue…`); log(`Sending ${count} songs to Segue…`);
       const res = await send(payload);

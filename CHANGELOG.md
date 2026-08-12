@@ -12,6 +12,11 @@ All notable changes to Segue are documented here. Format loosely follows
 - Review now has bulk actions to include every medium-confidence match or exclude
   every unmatched row, plus a UTF-8 CSV download of unmatched tracks for manual
   handling. Active job IDs survive a tab reload in session storage.
+- Spotify imports can now include saved albums and followed artists alongside
+  playlists and liked songs. Each followed artist becomes a deduplicated catalog
+  playlist assembled from their albums and singles because Spotify removed the
+  top-tracks endpoint in February 2026. The OAuth path now requests
+  `user-follow-read` and uses Spotify's renamed playlist `items` endpoint.
 
 ### Fixed
 - YouTube Music connections now survive server/container restarts. Segue keeps

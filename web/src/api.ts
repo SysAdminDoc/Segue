@@ -19,7 +19,10 @@ export interface Status {
   spotify: { connected: boolean; user: { id: string; name: string } | null; source?: string; count?: number };
   ytmusic: { connected: boolean };
 }
-export interface Source { type: "playlist" | "liked"; id: string; name: string; total: number; image?: string }
+export interface Source {
+  type: "playlist" | "liked" | "album" | "artist";
+  id: string; name: string; total: number; total_known?: boolean; image?: string;
+}
 export interface Candidate { videoId: string; title: string; artists: string[]; confidence: number }
 export interface Match {
   videoId: string; title: string; artists: string[];
@@ -47,7 +50,7 @@ export const api = {
     "/api/auth/ytmusic/oauth/start", { method: "POST" }),
   ytOAuthPoll: () => req<{ status: "pending" | "connected" }>("/api/auth/ytmusic/oauth/poll", { method: "POST" }),
   ytHeaders: (raw_headers: string) => req("/api/auth/ytmusic/headers", { method: "POST", body: JSON.stringify({ raw_headers }) }),
-  playlists: () => req<{ liked: Source; playlists: Source[] }>("/api/playlists"),
+  playlists: () => req<{ liked: Source; playlists: Source[]; albums: Source[]; artists: Source[] }>("/api/playlists"),
   startTransfer: (sources: Source[]) => req<{ jobId: string }>("/api/transfer", { method: "POST", body: JSON.stringify({ sources }) }),
   job: (id: string) => req<Job>(`/api/transfer/${id}`),
   jobEvents: (id: string, onJob: (job: Job) => void) => {
