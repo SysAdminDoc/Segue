@@ -1,4 +1,4 @@
-# Segue v0.1.0 — backend dependencies
+# Segue v0.7.0 — backend dependencies
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 httpx==0.28.1

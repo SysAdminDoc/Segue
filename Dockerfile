@@ -1,4 +1,4 @@
-# Segue v0.1.0 — multi-stage: build the SPA, then run FastAPI serving it.
+# Segue v0.7.0 — multi-stage: build the SPA, then run FastAPI serving it.
 FROM node:22-alpine AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json* ./

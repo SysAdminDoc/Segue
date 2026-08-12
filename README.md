@@ -1,6 +1,6 @@
 # Segue
 
-[![version](https://img.shields.io/badge/version-0.6.0-cba6f7)](https://github.com/SysAdminDoc/Segue/releases)
+[![version](https://img.shields.io/badge/version-0.7.0-cba6f7)](https://github.com/SysAdminDoc/Segue/releases)
 [![license](https://img.shields.io/badge/license-MIT-a6e3a1)](LICENSE)
 [![stack](https://img.shields.io/badge/FastAPI%20%2B%20React-89b4fa)](#stack)
 [![live](https://img.shields.io/badge/live-segue.getparkerai.com-fab387)](https://segue.getparkerai.com)
@@ -61,6 +61,10 @@ adds an *"Export to YouTube Music"* button: pick playlists, albums, or followed
 artists, and it scrapes them (paginated, rate-limit aware) and opens Segue with
 your library loaded. Source:
 [`web/public/segue-spotify.user.js`](web/public/segue-spotify.user.js).
+
+The unversioned URL is the auto-update channel declared in the userscript
+metadata. The immutable source for this release is
+**https://segue.getparkerai.com/exporter/v0.7.0/segue-spotify.user.js**.
 
 Don’t want a userscript manager? Open the hosted
 **[bookmarklet installer](https://segue.getparkerai.com/bookmarklet.html)** and

@@ -3,7 +3,7 @@
 All notable changes to Segue are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versioning is `vMAJOR.MINOR.PATCH`.
 
-## [Unreleased]
+## [0.7.0] — 2026-08-12
 
 ### Added
 - Transfer progress now streams over Server-Sent Events, including matching,
@@ -26,6 +26,8 @@ All notable changes to Segue are documented here. Format loosely follows
 - Hardened the Pathfinder GraphQL fallback by capturing bodies from Fetch
   `Request` objects as well as `init.body`/XHR, and by supporting Spotify's
   batched GraphQL request shape before applying pagination.
+- Published the exporter at an immutable versioned URL for v0.7.0 while keeping
+  `/segue-spotify.user.js` as the userscript metadata's auto-update channel.
 
 ### Fixed
 - YouTube Music connections now survive server/container restarts. Segue keeps

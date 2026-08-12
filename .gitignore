@@ -19,6 +19,9 @@ data/
 *.oauth.json
 
 # Agent working notes (never commit)
+*.md
+!README.md
+!CHANGELOG.md
 CLAUDE.md
 CODEX_CHANGELOG.md
 .claude/
