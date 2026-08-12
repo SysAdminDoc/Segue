@@ -59,6 +59,9 @@ export const api = {
     req(`/api/transfer/${id}/rematch`, { method: "POST", body: JSON.stringify({ track_id, video_id, title, artists }) }),
   toggle: (id: string, track_id: string, included: boolean) =>
     req(`/api/transfer/${id}/toggle`, { method: "POST", body: JSON.stringify({ track_id, included }) }),
+  bulk: (id: string, action: "include_medium" | "exclude_nomatch") =>
+    req<{ ok: boolean; changed: number }>(`/api/transfer/${id}/bulk`, { method: "POST", body: JSON.stringify({ action }) }),
+  unmatchedCsvUrl: (id: string) => `${BASE}/api/transfer/${id}/unmatched.csv`,
   search: (id: string, query: string) => req<{ results: Candidate[] }>(`/api/transfer/${id}/search`, { method: "POST", body: JSON.stringify({ query }) }),
   commit: (id: string) => req(`/api/transfer/${id}/commit`, { method: "POST" }),
 };

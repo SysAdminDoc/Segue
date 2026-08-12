@@ -44,6 +44,7 @@ a { color: var(--blue); }
 .btn.primary { background: var(--mauve); color: var(--crust); }
 .btn.ghost { background: var(--surface0); color: var(--text); }
 .btn.sm { padding: 5px 10px; font-size: 12px; }
+.btn:is(a) { display: inline-block; text-decoration: none; }
 
 .row-between { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
@@ -72,6 +73,7 @@ table.matches { width: 100%; border-collapse: collapse; font-size: 14px; }
 .conf.nomatch { color: var(--red); }
 
 .scroll-tbl { max-height: 520px; overflow: auto; border: 1px solid var(--surface0); border-radius: var(--radius-sm); }
+.review-tools { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 12px; }
 select, input[type=text], textarea { background: var(--crust); color: var(--text);
   border: 1px solid var(--surface1); border-radius: var(--radius-sm); padding: 7px 9px; font: inherit; width: 100%; }
 textarea { min-height: 120px; font-family: ui-monospace, monospace; font-size: 12px; }

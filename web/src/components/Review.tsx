@@ -66,6 +66,7 @@ function RowActions({ jobId, row, refresh }: { jobId: string; row: Row; refresh:
 export default function Review({ job, refresh, onCommit }: { job: Job; refresh: () => void; onCommit: () => void }) {
   const [showAll, setShowAll] = useState(false);
   const [committing, setCommitting] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState<"include_medium" | "exclude_nomatch" | null>(null);
 
   const stats = useMemo(() => {
     let high = 0, mid = 0, low = 0, none = 0, included = 0;
@@ -84,6 +85,11 @@ export default function Review({ job, refresh, onCommit }: { job: Job; refresh: 
     : job.matches.filter(r => r.status === "nomatch" || (r.match && r.match.band !== "high"));
 
   async function commit() { setCommitting(true); try { await api.commit(job.id); onCommit(); } finally { setCommitting(false); } }
+  async function bulk(action: "include_medium" | "exclude_nomatch") {
+    setBulkBusy(action);
+    try { await api.bulk(job.id, action); refresh(); }
+    finally { setBulkBusy(null); }
+  }
 
   return (
     <div className="card">
@@ -100,6 +106,18 @@ export default function Review({ job, refresh, onCommit }: { job: Job; refresh: 
         {stats.included.toLocaleString()} songs will be added. High-confidence matches are hidden —{" "}
         <a onClick={() => setShowAll(s => !s)} style={{ cursor: "pointer" }}>{showAll ? "show only what needs attention" : "show all"}</a>.
       </p>
+
+      <div className="review-tools" aria-label="Bulk review actions">
+        <button className="btn ghost sm" disabled={bulkBusy !== null} onClick={() => bulk("include_medium")}>
+          {bulkBusy === "include_medium" ? "Including…" : "Include all medium"}
+        </button>
+        <button className="btn ghost sm" disabled={bulkBusy !== null} onClick={() => bulk("exclude_nomatch")}>
+          {bulkBusy === "exclude_nomatch" ? "Excluding…" : "Exclude all no-match"}
+        </button>
+        <a className="btn ghost sm" href={api.unmatchedCsvUrl(job.id)} download="segue-unmatched.csv">
+          Export unmatched CSV
+        </a>
+      </div>
 
       <div className="scroll-tbl">
         <table className="matches">

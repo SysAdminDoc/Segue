@@ -9,6 +9,9 @@ All notable changes to Segue are documented here. Format loosely follows
 - Transfer progress now streams over Server-Sent Events, including matching,
   review changes, resumed writes, completion, and errors. The browser keeps one
   same-origin event stream instead of polling the job endpoint every 1.5 seconds.
+- Review now has bulk actions to include every medium-confidence match or exclude
+  every unmatched row, plus a UTF-8 CSV download of unmatched tracks for manual
+  handling. Active job IDs survive a tab reload in session storage.
 
 ### Fixed
 - YouTube Music connections now survive server/container restarts. Segue keeps

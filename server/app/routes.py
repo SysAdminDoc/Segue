@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+import csv
+import io
 import json
 import secrets
 from typing import Any
@@ -310,6 +312,62 @@ def toggle(
             save_job(job)
             return {"ok": True}
     raise HTTPException(404, "Track not in job")
+
+
+@router.post("/transfer/{job_id}/bulk")
+def bulk_update(
+    job_id: str, action: str = Body(..., embed=True),
+    sess: Session = Depends(session_dep),
+) -> dict[str, Any]:
+    job = _owned_job(job_id, sess)
+    if job.get("phase") != "review":
+        raise HTTPException(400, "Bulk actions are only available during review")
+    if action == "include_medium":
+        matches = lambda row: (row.get("match") or {}).get("band") == "medium"
+        included = True
+    elif action == "exclude_nomatch":
+        matches = lambda row: row.get("status") == "nomatch"
+        included = False
+    else:
+        raise HTTPException(400, "Unknown bulk action")
+
+    changed = 0
+    for row in job["matches"]:
+        if matches(row) and row.get("included") != included:
+            row["included"] = included
+            changed += 1
+    if changed:
+        save_job(job)
+    return {"ok": True, "changed": changed}
+
+
+@router.get("/transfer/{job_id}/unmatched.csv")
+def unmatched_csv(job_id: str, sess: Session = Depends(session_dep)) -> Response:
+    job = _owned_job(job_id, sess)
+    output = io.StringIO(newline="")
+    fields = ["source", "title", "artists", "album", "duration_seconds", "spotify_id", "isrc"]
+    writer = csv.DictWriter(output, fieldnames=fields)
+    writer.writeheader()
+    for row in job["matches"]:
+        if row.get("status") != "nomatch":
+            continue
+        track = row["track"]
+        source_index = row.get("source_index", -1)
+        source = job["sources"][source_index] if 0 <= source_index < len(job["sources"]) else {}
+        writer.writerow({
+            "source": source.get("name", ""),
+            "title": track.get("name", ""),
+            "artists": "; ".join(track.get("artists", [])),
+            "album": track.get("album", ""),
+            "duration_seconds": round(track.get("duration_ms", 0) / 1000),
+            "spotify_id": track.get("id", ""),
+            "isrc": track.get("isrc", "") or "",
+        })
+    return Response(
+        content="\ufeff" + output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="segue-unmatched.csv"'},
+    )
 
 
 @router.post("/transfer/{job_id}/search")
