@@ -1,11 +1,13 @@
 """HTTP API. Session is a signed cookie; live clients live server-side per session."""
 from __future__ import annotations
 
+import asyncio
+import json
 import secrets
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from itsdangerous import BadSignature, URLSafeSerializer
 
 from . import spotify, transfer, ytmusic
@@ -229,6 +231,45 @@ def transfer_status(job_id: str, sess: Session = Depends(session_dep)) -> dict[s
     job = _owned_job(job_id, sess)
     transfer.resume_if_needed(job_id, sess)
     return job
+
+
+@router.get("/transfer/{job_id}/events")
+async def transfer_events(
+    job_id: str, request: Request, sess: Session = Depends(session_dep)
+) -> StreamingResponse:
+    _owned_job(job_id, sess)
+
+    async def stream():
+        last_payload: str | None = None
+        keepalive_ticks = 0
+        yield "retry: 2000\n\n"
+        while not await request.is_disconnected():
+            job = get_job(job_id)
+            if not job or job.get("sid") != sess.sid:
+                break
+            transfer.resume_if_needed(job_id, sess)
+            payload = json.dumps(job, separators=(",", ":"), ensure_ascii=False)
+            if payload != last_payload:
+                yield f"event: job\ndata: {payload}\n\n"
+                last_payload = payload
+                keepalive_ticks = 0
+                if job.get("phase") in ("done", "error"):
+                    break
+            else:
+                keepalive_ticks += 1
+                if keepalive_ticks >= 30:
+                    yield ": keepalive\n\n"
+                    keepalive_ticks = 0
+            await asyncio.sleep(0.5)
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/transfer/{job_id}/rematch")

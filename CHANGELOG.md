@@ -5,6 +5,11 @@ All notable changes to Segue are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Added
+- Transfer progress now streams over Server-Sent Events, including matching,
+  review changes, resumed writes, completion, and errors. The browser keeps one
+  same-origin event stream instead of polling the job endpoint every 1.5 seconds.
+
 ### Fixed
 - YouTube Music connections now survive server/container restarts. Segue keeps
   the signed browser session ID, reopens the newest saved OAuth or browser-header

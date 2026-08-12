@@ -50,6 +50,11 @@ export const api = {
   playlists: () => req<{ liked: Source; playlists: Source[] }>("/api/playlists"),
   startTransfer: (sources: Source[]) => req<{ jobId: string }>("/api/transfer", { method: "POST", body: JSON.stringify({ sources }) }),
   job: (id: string) => req<Job>(`/api/transfer/${id}`),
+  jobEvents: (id: string, onJob: (job: Job) => void) => {
+    const events = new EventSource(`${BASE}/api/transfer/${id}/events`, { withCredentials: true });
+    events.addEventListener("job", event => onJob(JSON.parse((event as MessageEvent<string>).data) as Job));
+    return events;
+  },
   rematch: (id: string, track_id: string, video_id: string, title: string, artists: string[]) =>
     req(`/api/transfer/${id}/rematch`, { method: "POST", body: JSON.stringify({ track_id, video_id, title, artists }) }),
   toggle: (id: string, track_id: string, included: boolean) =>

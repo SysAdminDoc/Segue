@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, Job, Status } from "./api";
 import Connect from "./components/Connect";
 import PickSources from "./components/PickSources";
@@ -11,7 +11,6 @@ export default function App() {
   const [status, setStatus] = useState<Status | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [job, setJob] = useState<Job | null>(null);
-  const jobPoll = useRef<number | null>(null);
 
   const [claiming, setClaiming] = useState(false);
   const refreshStatus = useCallback(() => { api.status().then(setStatus).catch(() => {}); }, []);
@@ -30,19 +29,15 @@ export default function App() {
 
   useEffect(() => { refreshStatus(); }, [refreshStatus]);
 
-  // Poll the job while it is doing background work; stop once it needs the user.
+  // One event stream carries matching, review edits, and write progress.
   useEffect(() => {
     if (!jobId) return;
     refreshJob();
-    jobPoll.current = window.setInterval(() => {
-      api.job(jobId).then(j => {
-        setJob(j);
-        if (["review", "done", "error"].includes(j.phase) && jobPoll.current) {
-          window.clearInterval(jobPoll.current);
-        }
-      }).catch(() => {});
-    }, 1500);
-    return () => { if (jobPoll.current) window.clearInterval(jobPoll.current); };
+    const events = api.jobEvents(jobId, next => {
+      setJob(next);
+      if (["done", "error"].includes(next.phase)) events.close();
+    });
+    return () => events.close();
   }, [jobId, refreshJob]);
 
   const bothConnected = status?.spotify.connected && status?.ytmusic.connected;
