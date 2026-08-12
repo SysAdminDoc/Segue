@@ -37,6 +37,12 @@
   // ---------------------------------------------------------------------------
   // Capture the web-player's token by patching the page's own fetch/XHR
   // ---------------------------------------------------------------------------
+  function capturePathfinder(url, body) {
+    if (url.indexOf("/pathfinder/") > -1 && typeof body === "string" && /[Ll]ibrary|[Pp]laylist/.test(body)) {
+      pfTemplate = { url, body };
+      onCred();
+    }
+  }
   function installHooks() {
     if (window.__segueHooked) return;
     window.__segueHooked = true;
@@ -51,7 +57,10 @@
         if (auth && auth.indexOf("Bearer ") === 0 && auth.slice(7) !== bearer) { bearer = auth.slice(7); onCred(); }
         if (ct && ct !== clientToken) { clientToken = ct; onCred(); }
         const body = init && typeof init.body === "string" ? init.body : null;
-        if (url.indexOf("/pathfinder/") > -1 && body && /[Ll]ibrary|[Pp]laylist/.test(body)) { pfTemplate = { url, body }; onCred(); }
+        if (body) capturePathfinder(url, body);
+        else if (url.indexOf("/pathfinder/") > -1 && req.body) {
+          req.clone().text().then(text => capturePathfinder(url, text)).catch(() => {});
+        }
       } catch (e) { /* ignore */ }
       return oFetch.apply(this, arguments);
     };
@@ -69,7 +78,7 @@
     };
     XHR.prototype.send = function (body) {
       try {
-        if (this.__segUrl && String(this.__segUrl).indexOf("/pathfinder/") > -1 && typeof body === "string" && /[Ll]ibrary|[Pp]laylist/.test(body)) { pfTemplate = { url: String(this.__segUrl), body }; onCred(); }
+        if (this.__segUrl) capturePathfinder(String(this.__segUrl), body);
       } catch (e) { /* ignore */ }
       return oSend.apply(this, arguments);
     };
@@ -205,9 +214,13 @@
   async function pathfinderLiked(label) {
     if (!pfTemplate) throw new Error("Open your Liked Songs in Spotify once so Segue can learn the query, then Export again.");
     let base; try { base = JSON.parse(pfTemplate.body); } catch (e) { throw new Error("bad pathfinder template"); }
+    const operation = Array.isArray(base)
+      ? base.find(item => item && /[Ll]ibrary|[Pp]laylist/.test(JSON.stringify(item)))
+      : base;
+    if (!operation || typeof operation !== "object") throw new Error("bad pathfinder template");
     const out = [], seen = new Set(); let offset = 0; const limit = 100;
     for (let g = 0; g < 500; g++) {
-      base.variables = Object.assign({}, base.variables, { offset, limit });
+      operation.variables = Object.assign({}, operation.variables, { offset, limit });
       const res = await httpPaced("POST", pfTemplate.url, { authorization: `Bearer ${bearer}`, "client-token": clientToken || "", "content-type": "application/json", "app-platform": "WebPlayer" }, JSON.stringify(base));
       if (res.status === 401) throw new Error("token-expired");
       if (!res.ok) throw new Error(`pathfinder ${res.status}`);

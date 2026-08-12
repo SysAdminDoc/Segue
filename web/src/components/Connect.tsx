@@ -60,6 +60,12 @@ export default function Connect({ status, refresh }: { status: Status; refresh: 
         )}
 
         {!status.spotify.connected && (
+          <p className="muted">
+            Don’t want a userscript manager? Use the <a href={api.bookmarkletUrl()}>bookmarklet installer</a> instead.
+          </p>
+        )}
+
+        {!status.spotify.connected && (
           <p className="muted" style={{ marginTop: 8 }}>
             Prefer the old way?{" "}
             <a onClick={() => setShowAdvanced(s => !s)} style={{ cursor: "pointer" }}>Use a Spotify developer app</a>

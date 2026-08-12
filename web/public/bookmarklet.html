@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Install the Segue Spotify exporter as a bookmarklet—no userscript manager required." />
+  <meta name="theme-color" content="#1e1e2e" />
+  <title>Segue exporter bookmarklet</title>
+  <style>
+    :root{color-scheme:dark;--base:#1e1e2e;--mantle:#181825;--surface:#313244;--text:#cdd6f4;--sub:#a6adc8;--green:#a6e3a1;--blue:#89b4fa;--mauve:#cba6f7;--red:#f38ba8}
+    *{box-sizing:border-box}body{margin:0;background:var(--base);color:var(--text);font:16px/1.55 Inter,system-ui,-apple-system,"Segoe UI",sans-serif}
+    main{max-width:720px;margin:0 auto;padding:56px 22px}.brand{display:flex;align-items:center;gap:12px}.dot{width:12px;height:12px;border-radius:50%;background:linear-gradient(135deg,var(--green),var(--red))}
+    h1{font-size:28px;margin:0}h2{font-size:18px;margin:24px 0 8px}p,li{color:var(--sub)}.card{margin-top:28px;padding:24px;background:var(--mantle);border:1px solid var(--surface);border-radius:12px}
+    .bookmark{display:inline-block;margin:12px 0;padding:12px 18px;border-radius:8px;background:var(--mauve);color:#11111b;font-weight:750;text-decoration:none;cursor:grab}.bookmark[aria-disabled=true]{opacity:.5;pointer-events:none}
+    button{border:0;border-radius:8px;padding:10px 14px;background:var(--surface);color:var(--text);font:600 14px inherit;cursor:pointer}code{color:var(--green)}a{color:var(--blue)}.status{min-height:24px;color:var(--sub);font-size:14px}.error{color:var(--red)}
+  </style>
+</head>
+<body>
+  <main>
+    <div class="brand"><span class="dot"></span><h1>Segue exporter bookmarklet</h1></div>
+    <p>Export Spotify without Tampermonkey or Violentmonkey. The bookmark runs the same open-source exporter directly on the Spotify web player.</p>
+    <div class="card">
+      <h2>Install</h2>
+      <ol>
+        <li>Show your browser’s bookmarks bar.</li>
+        <li>Drag the button below onto the bookmarks bar.</li>
+        <li>Open <a href="https://open.spotify.com" target="_blank" rel="noreferrer">Spotify Web Player</a>, click the bookmark, then use the Segue export button.</li>
+      </ol>
+      <a id="bookmark" class="bookmark" href="#" aria-disabled="true">Loading Segue Exporter…</a>
+      <div><button id="copy" type="button" disabled>Copy bookmark address</button></div>
+      <p id="status" class="status">Preparing the current exporter…</p>
+      <p>If Spotify has already finished loading, click or play something after launching the bookmark so the exporter can observe the next authenticated request.</p>
+    </div>
+  </main>
+  <script>
+    const bookmark = document.querySelector("#bookmark");
+    const copy = document.querySelector("#copy");
+    const status = document.querySelector("#status");
+    let bookmarkUrl = "";
+    fetch("/segue-spotify.user.js", { cache: "no-store" })
+      .then(response => {
+        if (!response.ok) throw new Error(`Exporter returned ${response.status}`);
+        return response.text();
+      })
+      .then(source => {
+        const executable = source.replace(/^\/\/ ==UserScript==[\s\S]*?^\/\/ ==\/UserScript==\s*/m, "");
+        bookmarkUrl = "javascript:" + encodeURIComponent(executable);
+        bookmark.href = bookmarkUrl;
+        bookmark.textContent = "Segue Spotify Exporter";
+        bookmark.setAttribute("aria-disabled", "false");
+        copy.disabled = false;
+        status.textContent = "Ready—drag the purple button to your bookmarks bar.";
+      })
+      .catch(error => {
+        status.textContent = `Could not prepare the exporter: ${error.message}`;
+        status.classList.add("error");
+      });
+    copy.addEventListener("click", async () => {
+      await navigator.clipboard.writeText(bookmarkUrl);
+      copy.textContent = "Copied";
+      setTimeout(() => { copy.textContent = "Copy bookmark address"; }, 1500);
+    });
+  </script>
+</body>
+</html>

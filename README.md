@@ -62,6 +62,11 @@ artists, and it scrapes them (paginated, rate-limit aware) and opens Segue with
 your library loaded. Source:
 [`web/public/segue-spotify.user.js`](web/public/segue-spotify.user.js).
 
+Don’t want a userscript manager? Open the hosted
+**[bookmarklet installer](https://segue.getparkerai.com/bookmarklet.html)** and
+drag “Segue Spotify Exporter” to the bookmarks bar. It builds the bookmark from
+the current hosted exporter, so both install paths run the same code.
+
 ## Stack
 
 - **Backend:** Python 3.12, FastAPI, `ytmusicapi`, `rapidfuzz`, httpx (Spotify OAuth by hand).

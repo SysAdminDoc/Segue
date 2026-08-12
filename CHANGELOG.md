@@ -21,6 +21,11 @@ All notable changes to Segue are documented here. Format loosely follows
   the source. Segue loads all existing video IDs, collapses duplicates within the
   reviewed source, appends only missing tracks, and reports added versus skipped
   counts without duplicating work after a checkpoint retry.
+- Added a hosted bookmarklet installer for users who do not want a userscript
+  manager. It generates a draggable bookmark from the current exporter source.
+- Hardened the Pathfinder GraphQL fallback by capturing bodies from Fetch
+  `Request` objects as well as `init.body`/XHR, and by supporting Spotify's
+  batched GraphQL request shape before applying pagination.
 
 ### Fixed
 - YouTube Music connections now survive server/container restarts. Segue keeps
